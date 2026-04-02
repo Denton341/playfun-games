@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="x-ogp-key" content="fa29b0ef-94e6-4a82-b20f-08336b32c6c8">
+<title>Connect Four - Play.fun</title>
+<script src="https://sdk.play.fun"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a1a;
+    color: #fff;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+  }
+  .btn {
+    padding: 14px 50px; font-size: 1.1em; font-weight: bold; border: none;
+    border-radius: 8px; cursor: pointer; background: linear-gradient(135deg, #7b2ff7, #00f5d4);
+    color: #fff; margin-top: 15px; transition: transform 0.15s, box-shadow 0.15s;
+  }
+  .btn:hover { transform: scale(1.05); box-shadow: 0 0 25px rgba(0,245,212,0.4); }
+  #hub-link {
+    position: fixed; top: 15px; right: 20px; color: #00f5d4; text-decoration: none;
+    font-size: 0.95em; z-index: 100; opacity: 0.8; transition: opacity 0.2s;
+  }
+  #hub-link:hover { opacity: 1; }
+  .overlay {
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(10,10,26,0.92); display: flex; flex-direction: column;
+    align-items: center; justify-content: center; z-index: 50;
+    backdrop-filter: blur(8px);
+  }
+  .overlay h1 { font-size: 2.8em; margin-bottom: 10px; background: linear-gradient(135deg, #7b2ff7, #00f5d4); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  .overlay p { font-size: 1.15em; color: #aaa; margin-bottom: 5px; }
+  .hidden { display: none !important; }
+  #board-container { position: relative; }
+  .board {
+    display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px;
+    background: linear-gradient(180deg, #1a1a3e, #12122a); border-radius: 12px;
+    padding: 12px; box-shadow: 0 0 40px rgba(123,47,247,0.2);
+  }
+  .cell {
+    width: 64px; height: 64px; border-radius: 50%; background: #0a0a1a;
+    border: 2px solid #222; transition: background 0.3s, box-shadow 0.3s, transform 0.3s;
+    cursor: pointer;
+  }
+  .cell:hover { border-color: #444; }
+  .cell.red { background: #ff2770; box-shadow: 0 0 15px rgba(255,39,112,0.5); }
+  .cell.yellow { background: #f5c842; box-shadow: 0 0 15px rgba(245,200,66,0.5); }
+  .cell.win { animation: winPulse 0.6s ease-in-out infinite alternate; }
+  @keyframes winPulse { from { transform: scale(1); } to { transform: scale(1.15); } }
+  .col-hover { position: absolute; top: -50px; display: flex; gap: 6px; padding: 0 12px; }
+  .col-indicator {
+    width: 64px; height: 40px; display: flex; align-items: center; justify-content: center;
+    opacity: 0; transition: opacity 0.2s;
+  }
+  .col-indicator.active { opacity: 1; }
+  .col-indicator::after {
+    content: '▼'; color: #ff2770; font-size: 1.4em;
+    text-shadow: 0 0 10px rgba(255,39,112,0.6);
+  }
+  #status {
+    margin-top: 18px; font-size: 1.3em; min-height: 40px;
+    text-shadow: 0 0 10px rgba(0,245,212,0.3);
+  }
+  #timer { color: #00f5d4; font-size: 1.1em; margin-top: 8px; }
+  .score-display { font-size: 2.2em; color: #00f5d4; margin: 10px 0; text-shadow: 0 0 20px rgba(0,245,212,0.4); }
+</style>
+</head>
+<body>
+<a id="hub-link" href="/">← Back to Hub</a>
+
+<div id="start-screen" class="overlay">
+  <h1>Connect Four</h1>
+  <p>Drop discs to connect 4 in a row!</p>
+  <p style="color:#ff2770;">You are Red — beat the AI</p>
+  <button class="btn" onclick="startGame()">Play</button>
+</div>
+
+<div id="game-over-screen" class="overlay hidden">
+  <h1 id="result-text">Game Over</h1>
+  <div class="score-display" id="final-score">0</div>
+  <p id="result-detail"></p>
+  <button class="btn" onclick="startGame()">Play Again</button>
+</div>
+
+<div id="board-container" class="hidden">
+  <div class="col-hover" id="col-hover"></div>
+  <div class="board" id="board"></div>
+  <div id="status">Your turn</div>
+  <div id="timer"></div>
+</div>
+
+<script src="/shared/game-client.js"></script>
+<script>
+const ROWS = 6, COLS = 7;
+let grid, currentPlayer, gameActive, startTime, aiThinking;
+
+function init() {
+  PlayFunClient.init('connect-four', 'GAME_ID_HERE');
+  buildBoard();
+}
+
+function buildBoard() {
+  const board = document.getElementById('board');
+  const hover = document.getElementById('col-hover');
+  board.innerHTML = '';
+  hover.innerHTML = '';
+  for (let c = 0; c < COLS; c++) {
+    const ind = document.createElement('div');
+    ind.className = 'col-indicator';
+    ind.dataset.col = c;
+    hover.appendChild(ind);
+  }
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      const cell = document.createElement('div');
+      cell.className = 'cell';
+      cell.dataset.row = r;
+      cell.dataset.col = c;
+      cell.addEventListener('click', () => handleClick(c));
+      cell.addEventListener('mouseenter', () => showColIndicator(c));
+      cell.addEventListener('mouseleave', () => hideColIndicators());
+      board.appendChild(cell);
+    }
+  }
+}
+
+function showColIndicator(c) {
+  if (!gameActive || currentPlayer !== 1) return;
+  document.querySelectorAll('.col-indicator').forEach((el, i) => {
+    el.classList.toggle('active', i === c);
+  });
+}
+
+function hideColIndicators() {
+  document.querySelectorAll('.col-indicator').forEach(el => el.classList.remove('active'));
+}
+
+function startGame() {
+  document.getElementById('start-screen').classList.add('hidden');
+  document.getElementById('game-over-screen').classList.add('hidden');
+  document.getElementById('board-container').classList.remove('hidden');
+  grid = Array.from({ length: ROWS }, () => Array(COLS).fill(0));
+  currentPlayer = 1;
+  gameActive = true;
+  aiThinking = false;
+  startTime = Date.now();
+  updateBoard();
+  document.getElementById('status').textContent = 'Your turn';
+  updateTimer();
+}
+
+function updateTimer() {
+  if (!gameActive) return;
+  const elapsed = Math.floor((Date.now() - startTime) / 1000);
+  document.getElementById('timer').textContent = `Time: ${elapsed}s`;
+  requestAnimationFrame(updateTimer);
+}
+
+function getCell(r, c) {
+  return document.querySelector(`.cell[data-row="${r}"][data-col="${c}"]`);
+}
+
+function updateBoard() {
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      const cell = getCell(r, c);
+      cell.classList.remove('red', 'yellow', 'win');
+      if (grid[r][c] === 1) cell.classList.add('red');
+      else if (grid[r][c] === 2) cell.classList.add('yellow');
+    }
+  }
+}
+
+function dropPiece(col, player) {
+  for (let r = ROWS - 1; r >= 0; r--) {
+    if (grid[r][col] === 0) {
+      grid[r][col] = player;
+      return r;
+    }
+  }
+  return -1;
+}
+
+function undoDrop(col) {
+  for (let r = 0; r < ROWS; r++) {
+    if (grid[r][col] !== 0) { grid[r][col] = 0; return; }
+  }
+}
+
+function checkWin(player) {
+  const dirs = [[0,1],[1,0],[1,1],[1,-1]];
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      if (grid[r][c] !== player) continue;
+      for (const [dr, dc] of dirs) {
+        let cells = [[r, c]];
+        for (let i = 1; i < 4; i++) {
+          const nr = r + dr * i, nc = c + dc * i;
+          if (nr < 0 || nr >= ROWS || nc < 0 || nc >= COLS || grid[nr][nc] !== player) break;
+          cells.push([nr, nc]);
+        }
+        if (cells.length === 4) return cells;
+      }
+    }
+  }
+  return null;
+}
+
+function isFull() {
+  return grid[0].every(c => c !== 0);
+}
+
+function handleClick(col) {
+  if (!gameActive || currentPlayer !== 1 || aiThinking) return;
+  if (grid[0][col] !== 0) return;
+  const row = dropPiece(col, 1);
+  if (row === -1) return;
+  updateBoard();
+  const win = checkWin(1);
+  if (win) return endGame(1, win);
+  if (isFull()) return endGame(0);
+  currentPlayer = 2;
+  document.getElementById('status').textContent = 'AI is thinking...';
+  aiThinking = true;
+  setTimeout(aiMove, 400);
+}
+
+function aiMove() {
+  const col = bestMove();
+  dropPiece(col, 2);
+  updateBoard();
+  const win = checkWin(2);
+  if (win) return endGame(2, win);
+  if (isFull()) return endGame(0);
+  currentPlayer = 1;
+  aiThinking = false;
+  document.getElementById('status').textContent = 'Your turn';
+}
+
+function bestMove() {
+  // Check for immediate win
+  for (let c = 0; c < COLS; c++) {
+    if (grid[0][c] !== 0) continue;
+    dropPiece(c, 2);
+    if (checkWin(2)) { undoDrop(c); return c; }
+    undoDrop(c);
+  }
+  // Block player win
+  for (let c = 0; c < COLS; c++) {
+    if (grid[0][c] !== 0) continue;
+    dropPiece(c, 1);
+    if (checkWin(1)) { undoDrop(c); return c; }
+    undoDrop(c);
+  }
+  // Minimax depth 4
+  let bestScore = -Infinity, bestCol = 3;
+  for (let c = 0; c < COLS; c++) {
+    if (grid[0][c] !== 0) continue;
+    dropPiece(c, 2);
+    const s = minimax(4, false, -Infinity, Infinity);
+    undoDrop(c);
+    if (s > bestScore) { bestScore = s; bestCol = c; }
+  }
+  return bestCol;
+}
+
+function evaluate() {
+  let score = 0;
+  const lines = getAllLines();
+  for (const line of lines) {
+    const ai = line.filter(v => v === 2).length;
+    const hu = line.filter(v => v === 1).length;
+    if (ai > 0 && hu === 0) score += [0, 1, 10, 100][ai];
+    if (hu > 0 && ai === 0) score -= [0, 1, 10, 100][hu];
+  }
+  // Center column preference
+  for (let r = 0; r < ROWS; r++) {
+    if (grid[r][3] === 2) score += 3;
+    if (grid[r][3] === 1) score -= 3;
+  }
+  return score;
+}
+
+function getAllLines() {
+  const lines = [];
+  for (let r = 0; r < ROWS; r++)
+    for (let c = 0; c <= COLS - 4; c++)
+      lines.push([grid[r][c], grid[r][c+1], grid[r][c+2], grid[r][c+3]]);
+  for (let c = 0; c < COLS; c++)
+    for (let r = 0; r <= ROWS - 4; r++)
+      lines.push([grid[r][c], grid[r+1][c], grid[r+2][c], grid[r+3][c]]);
+  for (let r = 0; r <= ROWS - 4; r++)
+    for (let c = 0; c <= COLS - 4; c++)
+      lines.push([grid[r][c], grid[r+1][c+1], grid[r+2][c+2], grid[r+3][c+3]]);
+  for (let r = 3; r < ROWS; r++)
+    for (let c = 0; c <= COLS - 4; c++)
+      lines.push([grid[r][c], grid[r-1][c+1], grid[r-2][c+2], grid[r-3][c+3]]);
+  return lines;
+}
+
+function minimax(depth, isMax, alpha, beta) {
+  const w2 = checkWin(2), w1 = checkWin(1);
+  if (w2) return 10000 + depth;
+  if (w1) return -10000 - depth;
+  if (isFull() || depth === 0) return evaluate();
+  if (isMax) {
+    let val = -Infinity;
+    for (let c = 0; c < COLS; c++) {
+      if (grid[0][c] !== 0) continue;
+      dropPiece(c, 2);
+      val = Math.max(val, minimax(depth - 1, false, alpha, beta));
+      undoDrop(c);
+      alpha = Math.max(alpha, val);
+      if (beta <= alpha) break;
+    }
+    return val;
+  } else {
+    let val = Infinity;
+    for (let c = 0; c < COLS; c++) {
+      if (grid[0][c] !== 0) continue;
+      dropPiece(c, 1);
+      val = Math.min(val, minimax(depth - 1, true, alpha, beta));
+      undoDrop(c);
+      beta = Math.min(beta, val);
+      if (beta <= alpha) break;
+    }
+    return val;
+  }
+}
+
+async function endGame(winner, winCells) {
+  gameActive = false;
+  aiThinking = false;
+  if (winCells) winCells.forEach(([r, c]) => getCell(r, c).classList.add('win'));
+
+  const elapsed = (Date.now() - startTime) / 1000;
+  let score = 0, text = '', detail = '';
+  if (winner === 1) {
+    const speedBonus = Math.max(0, Math.floor(500 - elapsed * 5));
+    score = 1000 + speedBonus;
+    text = 'You Win!';
+    detail = `Win bonus: 1000 + Speed bonus: ${speedBonus}`;
+  } else if (winner === 2) {
+    score = 0;
+    text = 'AI Wins';
+    detail = 'Better luck next time!';
+  } else {
+    score = 200;
+    text = 'Draw!';
+    detail = 'Draw bonus: 200';
+  }
+
+  document.getElementById('status').textContent = text;
+  setTimeout(() => {
+    document.getElementById('result-text').textContent = text;
+    document.getElementById('final-score').textContent = score;
+    document.getElementById('result-detail').textContent = detail;
+    document.getElementById('game-over-screen').classList.remove('hidden');
+  }, 1500);
+
+  try { await PlayFunClient.submitScore(score); } catch(e) { console.log('Score submit error', e); }
+}
+
+init();
+</script>
+</body>
+</html>

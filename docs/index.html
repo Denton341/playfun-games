@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PlayFun Arcade - 50 Games</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0a0a0f; color: #fff; font-family: 'Segoe UI', system-ui, sans-serif; min-height: 100vh; }
+  .header { text-align: center; padding: 40px 20px 10px; }
+  .header h1 { font-size: 2.5em; background: linear-gradient(135deg, #00f5d4, #7b2ff7); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  .header p { color: #888; margin-top: 8px; font-size: 1.1em; }
+  .filter-bar { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; padding: 15px 20px; }
+  .filter-btn { padding: 6px 16px; border: 1px solid #2a2a3a; border-radius: 20px; background: transparent; color: #888; cursor: pointer; font-size: 0.85em; transition: all 0.2s; }
+  .filter-btn:hover, .filter-btn.active { border-color: #7b2ff7; color: #00f5d4; background: rgba(123,47,247,0.1); }
+  .games-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; max-width: 1400px; margin: 20px auto; padding: 0 20px; }
+  .game-card { background: #14141f; border: 1px solid #2a2a3a; border-radius: 14px; padding: 20px; transition: all 0.3s; cursor: pointer; text-decoration: none; color: #fff; }
+  .game-card:hover { border-color: #7b2ff7; transform: translateY(-3px); box-shadow: 0 6px 25px rgba(123,47,247,0.15); }
+  .game-icon { font-size: 2.5em; margin-bottom: 8px; }
+  .game-card h2 { font-size: 1.15em; margin-bottom: 4px; }
+  .game-card .genre { color: #00f5d4; font-size: 0.8em; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; }
+  .game-card p { color: #888; margin-top: 6px; font-size: 0.9em; line-height: 1.3; }
+  .play-btn { display: inline-block; margin-top: 12px; padding: 6px 20px; background: linear-gradient(135deg, #7b2ff7, #00f5d4); border-radius: 6px; font-weight: 600; font-size: 0.85em; }
+  .stats { text-align: center; padding: 30px; color: #555; font-size: 0.85em; }
+  .count { text-align: center; color: #555; font-size: 0.9em; margin-bottom: 10px; }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>PlayFun Arcade</h1>
+  <p>50 games. Play to earn. Powered by Solana.</p>
+</div>
+<div class="filter-bar">
+  <button class="filter-btn active" onclick="filter('all')">All</button>
+  <button class="filter-btn" onclick="filter('runner')">Runners</button>
+  <button class="filter-btn" onclick="filter('puzzle')">Puzzle</button>
+  <button class="filter-btn" onclick="filter('action')">Action</button>
+  <button class="filter-btn" onclick="filter('brain')">Brain</button>
+  <button class="filter-btn" onclick="filter('card')">Card/Casino</button>
+  <button class="filter-btn" onclick="filter('classic')">Classics</button>
+</div>
+<div class="count" id="count">50 games</div>
+<div class="games-grid" id="grid"></div>
+<div class="stats">Powered by Play.fun on Solana</div>
+<script>
+const GAMES = [
+  { slug: 'sky-dash', name: 'Sky Dash', icon: '🚀', genre: 'Infinite Runner', cat: 'runner', desc: 'Dodge obstacles and dash through the sky.' },
+  { slug: 'block-surge', name: 'Block Surge', icon: '🧱', genre: 'Block Puzzle', cat: 'puzzle', desc: 'Stack and clear blocks in this Tetris-style puzzler.' },
+  { slug: 'word-blitz', name: 'Word Blitz', icon: '📝', genre: 'Word Game', cat: 'brain', desc: 'Find words before time runs out.' },
+  { slug: 'tap-frenzy', name: 'Tap Frenzy', icon: '👆', genre: 'Reflex Tapper', cat: 'action', desc: 'Tap as fast as you can in 10 seconds!' },
+  { slug: 'drift-kings', name: 'Drift Kings', icon: '🏎️', genre: 'Racing', cat: 'action', desc: 'Weave through traffic at high speed.' },
+  { slug: 'snake-arena', name: 'Snake Arena', icon: '🐍', genre: 'Survival', cat: 'classic', desc: 'Classic snake. Grow longer, survive longer.' },
+  { slug: 'gem-crush', name: 'Gem Crush', icon: '💎', genre: 'Match-3', cat: 'puzzle', desc: 'Swap gems to create matches and combos.' },
+  { slug: 'idle-empire', name: 'Idle Empire', icon: '🏭', genre: 'Idle / Clicker', cat: 'card', desc: 'Click to earn. Buy upgrades. Build your empire.' },
+  { slug: 'color-flood', name: 'Color Flood', icon: '🎨', genre: 'Flood Puzzle', cat: 'puzzle', desc: 'Flood the board with one color in limited moves.' },
+  { slug: 'asteroid-blast', name: 'Asteroid Blast', icon: '☄️', genre: 'Space Shooter', cat: 'action', desc: 'Destroy asteroids in deep space.' },
+  { slug: 'memory-matrix', name: 'Memory Matrix', icon: '🧠', genre: 'Brain Game', cat: 'brain', desc: 'Remember the pattern. Test your memory!' },
+  { slug: 'bounce-ball', name: 'Bounce Ball', icon: '⚽', genre: 'Platformer', cat: 'action', desc: 'Bounce from platform to platform.' },
+  { slug: 'math-rush', name: 'Math Rush', icon: '🔢', genre: 'Speed Math', cat: 'brain', desc: 'Solve math problems against the clock.' },
+  { slug: 'hex-merge', name: 'Hex Merge', icon: '🔷', genre: '2048 Merge', cat: 'puzzle', desc: 'Slide and merge tiles to reach 2048.' },
+  { slug: 'tower-stack', name: 'Tower Stack', icon: '🏗️', genre: 'Stacking', cat: 'action', desc: 'Time your drops. Build the tallest tower!' },
+  { slug: 'aim-trainer', name: 'Aim Trainer', icon: '🎯', genre: 'Precision', cat: 'action', desc: 'Click targets fast. Track your accuracy.' },
+  { slug: 'pipe-connect', name: 'Pipe Connect', icon: '🔧', genre: 'Flow Puzzle', cat: 'puzzle', desc: 'Rotate pipes to connect the flow.' },
+  { slug: 'rhythm-tap', name: 'Rhythm Tap', icon: '🎵', genre: 'Rhythm', cat: 'action', desc: 'Hit notes as they cross the line.' },
+  { slug: 'gravity-runner', name: 'Gravity Runner', icon: '🔄', genre: 'Gravity Flip', cat: 'runner', desc: 'Flip gravity to dodge obstacles!' },
+  { slug: 'card-war', name: 'Card War', icon: '🃏', genre: 'Card Battle', cat: 'card', desc: 'Play element cards in strategic battles.' },
+  { slug: 'whack-a-mole', name: 'Whack-A-Mole', icon: '🔨', genre: 'Reflex', cat: 'action', desc: 'Whack moles as they pop up!' },
+  { slug: 'bubble-pop', name: 'Bubble Pop', icon: '🫧', genre: 'Bubble Shooter', cat: 'puzzle', desc: 'Pop matching bubble clusters.' },
+  { slug: 'maze-runner', name: 'Maze Runner', icon: '🏃', genre: 'Maze', cat: 'puzzle', desc: 'Navigate procedural mazes against the clock.' },
+  { slug: 'color-match', name: 'Color Match', icon: '🌈', genre: 'Stroop Game', cat: 'brain', desc: 'Match the color, not the word. Tricky!' },
+  { slug: 'slot-machine', name: 'Slot Machine', icon: '🎰', genre: 'Casino', cat: 'card', desc: 'Spin the reels. Match for jackpots!' },
+  { slug: 'dice-roller', name: 'Dice Roller', icon: '🎲', genre: 'Dice Game', cat: 'card', desc: 'Predict the next roll. Build streaks!' },
+  { slug: 'breakout', name: 'Breakout', icon: '🧨', genre: 'Brick Breaker', cat: 'classic', desc: 'Break all the bricks with the ball.' },
+  { slug: 'flappy-dash', name: 'Flappy Dash', icon: '🐦', genre: 'Flappy Clone', cat: 'runner', desc: 'Tap to flap. Dodge the pipes!' },
+  { slug: 'simon-says', name: 'Simon Says', icon: '🔴', genre: 'Memory Sequence', cat: 'brain', desc: 'Repeat the growing color sequence.' },
+  { slug: 'type-racer', name: 'Type Racer', icon: '⌨️', genre: 'Typing Speed', cat: 'brain', desc: 'Type words as fast as you can!' },
+  { slug: 'minesweeper', name: 'Minesweeper', icon: '💣', genre: 'Classic Puzzle', cat: 'classic', desc: 'Find all mines without detonating any.' },
+  { slug: 'lights-out', name: 'Lights Out', icon: '💡', genre: 'Logic Puzzle', cat: 'puzzle', desc: 'Toggle lights to turn them all off.' },
+  { slug: 'reaction-time', name: 'Reaction Time', icon: '⚡', genre: 'Reflex Test', cat: 'action', desc: 'How fast can you react? 5 rounds!' },
+  { slug: 'number-drop', name: 'Number Drop', icon: '🔽', genre: 'Number Puzzle', cat: 'brain', desc: 'Click falling numbers in order. Don\'t miss!' },
+  { slug: 'emoji-match', name: 'Emoji Match', icon: '😀', genre: 'Card Memory', cat: 'brain', desc: 'Flip cards and match emoji pairs.' },
+  { slug: 'pixel-draw', name: 'Pixel Draw', icon: '🖌️', genre: 'Drawing', cat: 'puzzle', desc: 'Recreate pixel art patterns for points.' },
+  { slug: 'quiz-blitz', name: 'Quiz Blitz', icon: '❓', genre: 'Trivia', cat: 'brain', desc: '20 trivia questions. How much do you know?' },
+  { slug: 'catch-fruit', name: 'Catch Fruit', icon: '🍎', genre: 'Catching', cat: 'action', desc: 'Catch fruits, avoid bombs. 60 seconds!' },
+  { slug: 'space-dodge', name: 'Space Dodge', icon: '🛸', genre: 'Dodger', cat: 'action', desc: 'Dodge asteroids falling from space.' },
+  { slug: 'crossword-mini', name: 'Crossword Mini', icon: '📰', genre: 'Word Puzzle', cat: 'brain', desc: 'Solve mini 5x5 crossword puzzles.' },
+  { slug: 'color-sort', name: 'Color Sort', icon: '🧪', genre: 'Sort Puzzle', cat: 'puzzle', desc: 'Sort colored balls into matching tubes.' },
+  { slug: 'ball-bounce', name: 'Ball Bounce', icon: '🏓', genre: 'Pong', cat: 'classic', desc: 'Classic Pong against AI. First to 5!' },
+  { slug: 'rock-paper-scissors', name: 'Rock Paper Scissors', icon: '✊', genre: 'Classic', cat: 'classic', desc: '10 rounds. Build streaks to multiply score!' },
+  { slug: 'sliding-puzzle', name: 'Sliding Puzzle', icon: '🔀', genre: 'Tile Slider', cat: 'puzzle', desc: 'Slide tiles into the correct order.' },
+  { slug: 'connect-four', name: 'Connect Four', icon: '🔴', genre: 'Strategy', cat: 'classic', desc: 'Drop discs to connect four. Beat the AI!' },
+  { slug: 'coin-flip', name: 'Coin Flip', icon: '🪙', genre: 'Betting', cat: 'card', desc: 'Predict heads or tails. Build streaks!' },
+  { slug: 'speed-click', name: 'Speed Click', icon: '💥', genre: 'Click Accuracy', cat: 'action', desc: 'Hit bullseyes for max points. 30 seconds!' },
+  { slug: 'pattern-lock', name: 'Pattern Lock', icon: '🔒', genre: 'Pattern Match', cat: 'brain', desc: 'Remember and recreate patterns on a 3x3 grid.' },
+  { slug: 'tic-tac-pro', name: 'Tic Tac Pro', icon: '❌', genre: 'Strategy', cat: 'classic', desc: 'Tic Tac Toe with AI. 3 difficulty levels!' },
+  { slug: 'hex-flip', name: 'Hex Flip', icon: '⬡', genre: 'Board Flip', cat: 'puzzle', desc: 'Flip hex tiles to make them all one color.' },
+];
+
+function render(list) {
+  const grid = document.getElementById('grid');
+  grid.innerHTML = '';
+  document.getElementById('count').textContent = list.length + ' games';
+  list.forEach(g => {
+    const card = document.createElement('a');
+    card.href = '/' + g.slug;
+    card.className = 'game-card';
+    card.innerHTML = `
+      <div class="game-icon">${g.icon}</div>
+      <div class="genre">${g.genre}</div>
+      <h2>${g.name}</h2>
+      <p>${g.desc}</p>
+      <div class="play-btn">PLAY NOW</div>
+    `;
+    grid.appendChild(card);
+  });
+}
+
+function filter(cat) {
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  event.target.classList.add('active');
+  render(cat === 'all' ? GAMES : GAMES.filter(g => g.cat === cat));
+}
+
+render(GAMES);
+</script>
+</body>
+</html>

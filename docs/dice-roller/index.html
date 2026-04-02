@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="x-ogp-key" content="fa29b0ef-94e6-4a82-b20f-08336b32c6c8">
+<title>Dice Roller</title>
+<script src="https://sdk.play.fun"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a1a; color: #fff;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    min-height: 100vh; display: flex; flex-direction: column; align-items: center;
+    overflow: hidden;
+  }
+  .hub-link {
+    position: fixed; top: 15px; right: 20px;
+    color: #00f5d4; text-decoration: none; font-size: 0.95em;
+    z-index: 100; opacity: 0.8; transition: opacity 0.2s;
+  }
+  .hub-link:hover { opacity: 1; }
+  .btn {
+    padding: 14px 50px; font-size: 1.1em; font-weight: bold;
+    border: none; border-radius: 8px; cursor: pointer;
+    background: linear-gradient(135deg, #7b2ff7, #00f5d4);
+    color: #fff; margin-top: 15px; transition: transform 0.15s, box-shadow 0.15s;
+  }
+  .btn:hover { transform: scale(1.05); box-shadow: 0 0 25px rgba(0,245,212,0.4); }
+  .btn:active { transform: scale(0.97); }
+  .overlay {
+    position: fixed; inset: 0; background: rgba(10,10,26,0.92);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    z-index: 50; backdrop-filter: blur(6px);
+  }
+  .overlay h1 { font-size: 2.8em; margin-bottom: 10px; background: linear-gradient(135deg, #7b2ff7, #00f5d4); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  .overlay p { font-size: 1.2em; color: #aaa; margin-bottom: 5px; }
+  .overlay .final-score { font-size: 3em; color: #00f5d4; margin: 10px 0; text-shadow: 0 0 20px rgba(0,245,212,0.5); }
+  #hud {
+    display: flex; gap: 25px; font-size: 1.15em;
+    margin: 60px 0 20px; z-index: 10;
+  }
+  #hud span { color: #00f5d4; }
+  .game-container {
+    display: flex; flex-direction: column; align-items: center; gap: 20px;
+    max-width: 400px; width: 90vw;
+  }
+  .dice-area {
+    display: flex; gap: 25px; margin: 10px 0;
+  }
+  .die {
+    width: 80px; height: 80px;
+    background: linear-gradient(135deg, #1a1a3a, #0f0f2a);
+    border: 2px solid #2a2a5a;
+    border-radius: 14px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 2.5em; font-weight: bold;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.4);
+    transition: transform 0.3s, border-color 0.3s;
+  }
+  .die.rolling {
+    animation: diceRoll 0.15s ease-in-out infinite;
+  }
+  @keyframes diceRoll {
+    0% { transform: rotate(-10deg) scale(0.95); }
+    50% { transform: rotate(10deg) scale(1.05); }
+    100% { transform: rotate(-10deg) scale(0.95); }
+  }
+  .die.highlight { border-color: #00f5d4; box-shadow: 0 0 20px rgba(0,245,212,0.3); }
+  .total-display {
+    font-size: 1.3em; color: #aaa;
+  }
+  .total-display span { color: #00f5d4; font-weight: bold; font-size: 1.2em; }
+  .predict-label {
+    color: #888; font-size: 1em; margin-top: 5px;
+  }
+  .predict-buttons {
+    display: flex; gap: 12px;
+  }
+  .predict-btn {
+    padding: 12px 24px; font-size: 1em; font-weight: bold;
+    border: 2px solid #333; border-radius: 10px;
+    background: rgba(255,255,255,0.05); color: #fff;
+    cursor: pointer; transition: all 0.15s;
+  }
+  .predict-btn:hover { border-color: #7b2ff7; background: rgba(123,47,247,0.15); transform: scale(1.05); }
+  .predict-btn.selected { border-color: #7b2ff7; background: rgba(123,47,247,0.25); box-shadow: 0 0 15px rgba(123,47,247,0.3); }
+  .predict-btn:disabled { opacity: 0.3; cursor: not-allowed; transform: none; }
+  #rollBtn {
+    padding: 14px 60px; font-size: 1.2em; font-weight: bold;
+    border: none; border-radius: 10px; cursor: pointer;
+    background: linear-gradient(135deg, #7b2ff7, #00f5d4);
+    color: #fff; transition: all 0.15s; margin-top: 5px;
+  }
+  #rollBtn:hover:not(:disabled) { transform: scale(1.05); box-shadow: 0 0 25px rgba(0,245,212,0.4); }
+  #rollBtn:disabled { opacity: 0.4; cursor: not-allowed; }
+  #feedback {
+    font-size: 1.4em; font-weight: bold; min-height: 1.5em;
+    text-align: center;
+  }
+  .streak-bar {
+    display: flex; gap: 6px; margin-top: 5px;
+  }
+  .streak-dot {
+    width: 12px; height: 12px; border-radius: 50%;
+    background: #222; border: 1px solid #333;
+    transition: all 0.3s;
+  }
+  .streak-dot.correct { background: #00f5d4; border-color: #00f5d4; box-shadow: 0 0 8px rgba(0,245,212,0.5); }
+  .streak-dot.wrong { background: #ff2770; border-color: #ff2770; }
+</style>
+</head>
+<body>
+<a class="hub-link" href="/">&#8592; Back to Hub</a>
+
+<div id="startScreen" class="overlay">
+  <h1>Dice Roller</h1>
+  <p>Predict: will the next roll be higher, lower, or same?</p>
+  <p style="color:#666; font-size:0.9em;">10 rounds. Build streaks for multiplier!</p>
+  <button class="btn" onclick="startGame()">Play</button>
+</div>
+
+<div id="gameOverScreen" class="overlay" style="display:none;">
+  <h1>Game Over!</h1>
+  <p>Your Score</p>
+  <div class="final-score" id="finalScore">0</div>
+  <p id="accuracy" style="color:#888;"></p>
+  <button class="btn" onclick="startGame()">Play Again</button>
+</div>
+
+<div id="hud">
+  <div>Round: <span id="roundDisplay">1</span>/10</div>
+  <div>Score: <span id="scoreDisplay">0</span></div>
+  <div>Streak: <span id="streakDisplay">0</span></div>
+</div>
+
+<div class="game-container">
+  <div class="dice-area">
+    <div class="die" id="die0">?</div>
+    <div class="die" id="die1">?</div>
+  </div>
+  <div class="total-display">Total: <span id="totalDisplay">-</span></div>
+
+  <div class="predict-label">Predict the next roll:</div>
+  <div class="predict-buttons" id="predictBtns">
+    <button class="predict-btn" data-pred="higher" onclick="selectPrediction('higher')">Higher</button>
+    <button class="predict-btn" data-pred="same" onclick="selectPrediction('same')">Same</button>
+    <button class="predict-btn" data-pred="lower" onclick="selectPrediction('lower')">Lower</button>
+  </div>
+
+  <button id="rollBtn" onclick="rollDice()" disabled>Roll Dice</button>
+
+  <div id="feedback"></div>
+
+  <div class="streak-bar" id="streakBar"></div>
+</div>
+
+<script src="/shared/game-client.js"></script>
+<script>
+PlayFunClient.init('dice-roller', 'GAME_ID_HERE');
+
+const die0 = document.getElementById('die0');
+const die1 = document.getElementById('die1');
+const totalDisplay = document.getElementById('totalDisplay');
+const feedbackEl = document.getElementById('feedback');
+const rollBtn = document.getElementById('rollBtn');
+const streakBar = document.getElementById('streakBar');
+
+let score, round, streak, prediction, prevTotal, correctCount, rolling;
+
+const DICE_FACES = ['&#9856;', '&#9857;', '&#9858;', '&#9859;', '&#9860;', '&#9861;'];
+function dieHTML(n) { return DICE_FACES[n - 1]; }
+
+function rollValue() { return Math.floor(Math.random() * 6) + 1; }
+
+function selectPrediction(pred) {
+  if (rolling) return;
+  prediction = pred;
+  document.querySelectorAll('.predict-btn').forEach(b => {
+    b.classList.toggle('selected', b.dataset.pred === pred);
+  });
+  rollBtn.disabled = false;
+}
+
+async function rollDice() {
+  if (rolling || !prediction) return;
+  rolling = true;
+  rollBtn.disabled = true;
+  document.querySelectorAll('.predict-btn').forEach(b => b.disabled = true);
+  feedbackEl.textContent = '';
+  die0.classList.add('rolling');
+  die1.classList.add('rolling');
+  die0.classList.remove('highlight');
+  die1.classList.remove('highlight');
+
+  // Animate
+  let ticks = 0;
+  const anim = setInterval(() => {
+    die0.innerHTML = dieHTML(rollValue());
+    die1.innerHTML = dieHTML(rollValue());
+    ticks++;
+    if (ticks >= 12) {
+      clearInterval(anim);
+      finishRoll();
+    }
+  }, 80);
+}
+
+function finishRoll() {
+  const d1 = rollValue(), d2 = rollValue();
+  const total = d1 + d2;
+
+  die0.classList.remove('rolling');
+  die1.classList.remove('rolling');
+  die0.innerHTML = dieHTML(d1);
+  die1.innerHTML = dieHTML(d2);
+  die0.classList.add('highlight');
+  die1.classList.add('highlight');
+  totalDisplay.textContent = total;
+
+  // Check prediction (first round has no previous total)
+  if (prevTotal !== null) {
+    let actual;
+    if (total > prevTotal) actual = 'higher';
+    else if (total < prevTotal) actual = 'lower';
+    else actual = 'same';
+
+    const dot = streakBar.children[round - 2]; // previous round's dot
+
+    if (prediction === actual) {
+      streak++;
+      correctCount++;
+      const multiplier = Math.min(streak, 5);
+      const pts = 10 * multiplier;
+      score += pts;
+      feedbackEl.innerHTML = `<span style="color:#00f5d4">Correct! +${pts} (${multiplier}x)</span>`;
+      if (dot) dot.classList.add('correct');
+    } else {
+      streak = 0;
+      feedbackEl.innerHTML = `<span style="color:#ff2770">Wrong! It was ${actual}.</span>`;
+      if (dot) dot.classList.add('wrong');
+    }
+
+    document.getElementById('scoreDisplay').textContent = score;
+    document.getElementById('streakDisplay').textContent = streak;
+  } else {
+    feedbackEl.innerHTML = '<span style="color:#888">First roll! Now predict the next.</span>';
+  }
+
+  prevTotal = total;
+  round++;
+
+  if (round > 10) {
+    // One more evaluation, then end
+    setTimeout(() => endGame(), 1200);
+    return;
+  }
+
+  document.getElementById('roundDisplay').textContent = Math.min(round, 10);
+  prediction = null;
+  document.querySelectorAll('.predict-btn').forEach(b => {
+    b.classList.remove('selected');
+    b.disabled = false;
+  });
+  rolling = false;
+}
+
+function startGame() {
+  document.getElementById('startScreen').style.display = 'none';
+  document.getElementById('gameOverScreen').style.display = 'none';
+  score = 0; round = 1; streak = 0; prediction = null; prevTotal = null; correctCount = 0; rolling = false;
+  document.getElementById('scoreDisplay').textContent = 0;
+  document.getElementById('streakDisplay').textContent = 0;
+  document.getElementById('roundDisplay').textContent = 1;
+  feedbackEl.textContent = '';
+  totalDisplay.textContent = '-';
+  die0.innerHTML = '?'; die1.innerHTML = '?';
+  die0.classList.remove('highlight'); die1.classList.remove('highlight');
+  rollBtn.disabled = true;
+
+  // Build streak dots
+  streakBar.innerHTML = '';
+  for (let i = 0; i < 9; i++) {
+    const dot = document.createElement('div');
+    dot.className = 'streak-dot';
+    streakBar.appendChild(dot);
+  }
+
+  // Auto roll first dice
+  rolling = true;
+  die0.classList.add('rolling');
+  die1.classList.add('rolling');
+  let ticks = 0;
+  const anim = setInterval(() => {
+    die0.innerHTML = dieHTML(rollValue());
+    die1.innerHTML = dieHTML(rollValue());
+    ticks++;
+    if (ticks >= 10) {
+      clearInterval(anim);
+      const d1 = rollValue(), d2 = rollValue();
+      prevTotal = d1 + d2;
+      die0.classList.remove('rolling');
+      die1.classList.remove('rolling');
+      die0.innerHTML = dieHTML(d1);
+      die1.innerHTML = dieHTML(d2);
+      die0.classList.add('highlight');
+      die1.classList.add('highlight');
+      totalDisplay.textContent = prevTotal;
+      feedbackEl.innerHTML = '<span style="color:#888">Now predict: will the next roll be higher, lower, or same?</span>';
+      round = 2;
+      document.getElementById('roundDisplay').textContent = 2;
+      document.querySelectorAll('.predict-btn').forEach(b => b.disabled = false);
+      rolling = false;
+    }
+  }, 80);
+}
+
+async function endGame() {
+  document.getElementById('finalScore').textContent = score;
+  document.getElementById('accuracy').textContent = `${correctCount}/9 correct predictions`;
+  document.getElementById('gameOverScreen').style.display = 'flex';
+  try { await PlayFunClient.submitScore(score); } catch(e) { console.warn('Score submit failed', e); }
+}
+</script>
+</body>
+</html>

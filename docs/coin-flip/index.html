@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="x-ogp-key" content="fa29b0ef-94e6-4a82-b20f-08336b32c6c8">
+<title>Coin Flip - Play.fun</title>
+<script src="https://sdk.play.fun"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a1a; color: #fff;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    min-height: 100vh; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; overflow: hidden;
+  }
+  .btn {
+    padding: 14px 50px; font-size: 1.1em; font-weight: bold; border: none;
+    border-radius: 8px; cursor: pointer; background: linear-gradient(135deg, #7b2ff7, #00f5d4);
+    color: #fff; margin-top: 15px; transition: transform 0.15s, box-shadow 0.15s;
+  }
+  .btn:hover { transform: scale(1.05); box-shadow: 0 0 25px rgba(0,245,212,0.4); }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+  #hub-link {
+    position: fixed; top: 15px; right: 20px; color: #00f5d4; text-decoration: none;
+    font-size: 0.95em; z-index: 100; opacity: 0.8; transition: opacity 0.2s;
+  }
+  #hub-link:hover { opacity: 1; }
+  .overlay {
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(10,10,26,0.92); display: flex; flex-direction: column;
+    align-items: center; justify-content: center; z-index: 50;
+    backdrop-filter: blur(8px);
+  }
+  .overlay h1 { font-size: 2.8em; margin-bottom: 10px; background: linear-gradient(135deg, #7b2ff7, #00f5d4); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  .overlay p { font-size: 1.15em; color: #aaa; margin-bottom: 5px; }
+  .hidden { display: none !important; }
+  .score-display { font-size: 2.2em; color: #00f5d4; margin: 10px 0; text-shadow: 0 0 20px rgba(0,245,212,0.4); }
+
+  .game-area { text-align: center; }
+  .stats-bar {
+    display: flex; gap: 30px; justify-content: center; margin-bottom: 25px;
+    font-size: 1.1em;
+  }
+  .stat-val { color: #00f5d4; font-weight: bold; }
+  .stat-val.streak { color: #ff2770; }
+
+  .coin-scene { perspective: 600px; margin: 30px auto; width: 140px; height: 140px; }
+  .coin {
+    width: 140px; height: 140px; position: relative;
+    transform-style: preserve-3d; transition: transform 0.05s;
+  }
+  .coin.flipping { animation: flipAnim 1.2s ease-in-out; }
+  .coin.flipping-tails { animation: flipAnimTails 1.2s ease-in-out; }
+  @keyframes flipAnim {
+    0% { transform: rotateX(0deg); }
+    50% { transform: rotateX(1800deg); }
+    100% { transform: rotateX(3600deg); }
+  }
+  @keyframes flipAnimTails {
+    0% { transform: rotateX(0deg); }
+    50% { transform: rotateX(1800deg); }
+    100% { transform: rotateX(3780deg); }
+  }
+  .coin-face {
+    position: absolute; width: 100%; height: 100%; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 3em; font-weight: bold; backface-visibility: hidden;
+    border: 4px solid rgba(255,255,255,0.15);
+  }
+  .coin-heads {
+    background: linear-gradient(135deg, #f5c842, #e6a817);
+    color: #5a3e00; text-shadow: 0 1px 2px rgba(0,0,0,0.2);
+    box-shadow: 0 0 30px rgba(245,200,66,0.4);
+  }
+  .coin-tails {
+    background: linear-gradient(135deg, #c0c0c0, #888);
+    color: #333; transform: rotateX(180deg);
+    box-shadow: 0 0 30px rgba(192,192,192,0.3);
+  }
+
+  .bet-section { margin: 20px 0; }
+  .bet-section label { font-size: 1em; color: #aaa; }
+  .bet-input {
+    width: 100px; padding: 8px 12px; font-size: 1.1em; text-align: center;
+    background: #1a1a3e; border: 2px solid #333; border-radius: 8px;
+    color: #fff; margin: 0 10px; outline: none; transition: border-color 0.2s;
+  }
+  .bet-input:focus { border-color: #7b2ff7; }
+  .bet-presets { margin-top: 8px; display: flex; gap: 8px; justify-content: center; }
+  .bet-preset {
+    padding: 6px 16px; background: #1a1a3e; border: 1px solid #333;
+    border-radius: 6px; color: #aaa; cursor: pointer; font-size: 0.9em;
+    transition: all 0.2s;
+  }
+  .bet-preset:hover { border-color: #7b2ff7; color: #fff; }
+
+  .choice-btns { display: flex; gap: 15px; justify-content: center; margin-top: 15px; }
+  .choice-btn {
+    padding: 14px 40px; font-size: 1.1em; font-weight: bold; border: 2px solid #333;
+    border-radius: 10px; cursor: pointer; background: #1a1a3e; color: #fff;
+    transition: all 0.2s;
+  }
+  .choice-btn:hover { border-color: #00f5d4; box-shadow: 0 0 15px rgba(0,245,212,0.2); }
+  .choice-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .choice-btn.heads-btn:hover { border-color: #f5c842; box-shadow: 0 0 15px rgba(245,200,66,0.3); }
+  .choice-btn.tails-btn:hover { border-color: #c0c0c0; box-shadow: 0 0 15px rgba(192,192,192,0.3); }
+
+  .result-msg {
+    margin-top: 15px; font-size: 1.3em; min-height: 35px;
+    transition: opacity 0.3s;
+  }
+  .result-msg.win { color: #00f5d4; text-shadow: 0 0 10px rgba(0,245,212,0.4); }
+  .result-msg.lose { color: #ff2770; text-shadow: 0 0 10px rgba(255,39,112,0.4); }
+</style>
+</head>
+<body>
+<a id="hub-link" href="/">← Back to Hub</a>
+
+<div id="start-screen" class="overlay">
+  <h1>Coin Flip</h1>
+  <p>Start with 100 coins. Predict heads or tails!</p>
+  <p style="color:#00f5d4">Streak of 3+ = 3x payout!</p>
+  <button class="btn" onclick="startGame()">Play</button>
+</div>
+
+<div id="game-over-screen" class="overlay hidden">
+  <h1 id="result-title">Game Over</h1>
+  <div class="score-display" id="final-score">0</div>
+  <p id="result-detail"></p>
+  <button class="btn" onclick="startGame()">Play Again</button>
+</div>
+
+<div id="game-area" class="game-area hidden">
+  <div class="stats-bar">
+    <div>Coins: <span class="stat-val" id="coins">100</span></div>
+    <div>Round: <span class="stat-val" id="round">1/20</span></div>
+    <div>Streak: <span class="stat-val streak" id="streak">0</span></div>
+  </div>
+
+  <div class="coin-scene">
+    <div class="coin" id="coin">
+      <div class="coin-face coin-heads">H</div>
+      <div class="coin-face coin-tails">T</div>
+    </div>
+  </div>
+
+  <div class="bet-section">
+    <label>Bet:</label>
+    <input type="number" class="bet-input" id="bet-input" value="10" min="1">
+    <div class="bet-presets">
+      <div class="bet-preset" onclick="setBet(10)">10</div>
+      <div class="bet-preset" onclick="setBet(25)">25</div>
+      <div class="bet-preset" onclick="setBet(50)">50</div>
+      <div class="bet-preset" onclick="setBet('all')">ALL IN</div>
+    </div>
+  </div>
+
+  <div class="choice-btns">
+    <button class="choice-btn heads-btn" id="heads-btn" onclick="flip('heads')">🪙 Heads</button>
+    <button class="choice-btn tails-btn" id="tails-btn" onclick="flip('tails')">🪙 Tails</button>
+  </div>
+
+  <div class="result-msg" id="result-msg"></div>
+</div>
+
+<script src="/shared/game-client.js"></script>
+<script>
+let coins, round, streak, maxRounds, flipping;
+
+function init() {
+  PlayFunClient.init('coin-flip', 'GAME_ID_HERE');
+}
+
+function startGame() {
+  document.getElementById('start-screen').classList.add('hidden');
+  document.getElementById('game-over-screen').classList.add('hidden');
+  document.getElementById('game-area').classList.remove('hidden');
+  coins = 100; round = 1; streak = 0; maxRounds = 20; flipping = false;
+  updateUI();
+  document.getElementById('result-msg').textContent = '';
+  enableButtons(true);
+}
+
+function setBet(val) {
+  const input = document.getElementById('bet-input');
+  input.value = val === 'all' ? coins : Math.min(val, coins);
+}
+
+function updateUI() {
+  document.getElementById('coins').textContent = coins;
+  document.getElementById('round').textContent = `${round}/${maxRounds}`;
+  document.getElementById('streak').textContent = streak;
+  document.getElementById('bet-input').max = coins;
+}
+
+function enableButtons(en) {
+  document.getElementById('heads-btn').disabled = !en;
+  document.getElementById('tails-btn').disabled = !en;
+}
+
+function flip(choice) {
+  if (flipping) return;
+  let bet = parseInt(document.getElementById('bet-input').value) || 0;
+  if (bet <= 0 || bet > coins) {
+    document.getElementById('bet-input').value = Math.min(10, coins);
+    bet = Math.min(10, coins);
+    if (bet <= 0) return;
+  }
+  flipping = true;
+  enableButtons(false);
+
+  const result = Math.random() < 0.5 ? 'heads' : 'tails';
+  const coinEl = document.getElementById('coin');
+  coinEl.classList.remove('flipping', 'flipping-tails');
+  void coinEl.offsetWidth;
+  coinEl.classList.add(result === 'heads' ? 'flipping' : 'flipping-tails');
+
+  setTimeout(() => {
+    const won = choice === result;
+    const msgEl = document.getElementById('result-msg');
+    if (won) {
+      streak++;
+      const multiplier = streak >= 3 ? 3 : 2;
+      const winnings = bet * multiplier;
+      coins += winnings - bet;
+      msgEl.textContent = `${result.toUpperCase()}! You win ${winnings} coins!` + (multiplier === 3 ? ' 🔥 STREAK BONUS!' : '');
+      msgEl.className = 'result-msg win';
+    } else {
+      streak = 0;
+      coins -= bet;
+      msgEl.textContent = `${result.toUpperCase()}! You lose ${bet} coins.`;
+      msgEl.className = 'result-msg lose';
+    }
+    round++;
+    updateUI();
+    flipping = false;
+
+    if (coins <= 0 || round > maxRounds) {
+      setTimeout(() => endGame(), 800);
+    } else {
+      enableButtons(true);
+      if (parseInt(document.getElementById('bet-input').value) > coins) {
+        document.getElementById('bet-input').value = coins;
+      }
+    }
+  }, 1300);
+}
+
+async function endGame() {
+  const score = Math.max(0, coins);
+  document.getElementById('result-title').textContent = coins > 100 ? 'Nice Profit!' : coins > 0 ? 'Game Over' : 'Busted!';
+  document.getElementById('final-score').textContent = `${score} coins`;
+  document.getElementById('result-detail').textContent = coins > 100
+    ? `You turned 100 into ${score} coins!`
+    : coins > 0 ? `You finished with ${score} coins.` : 'You ran out of coins!';
+  document.getElementById('game-over-screen').classList.remove('hidden');
+  try { await PlayFunClient.submitScore(score); } catch(e) { console.log('Score submit error', e); }
+}
+
+init();
+</script>
+</body>
+</html>

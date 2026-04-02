@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="x-ogp-key" content="fa29b0ef-94e6-4a82-b20f-08336b32c6c8">
+<title>Flappy Dash - Play.fun</title>
+<script src="https://sdk.play.fun"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a1a; color: #fff;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    overflow: hidden; height: 100vh;
+    display: flex; align-items: center; justify-content: center;
+  }
+  #hub-link {
+    position: fixed; top: 16px; right: 20px;
+    color: #00f5d4; text-decoration: none; font-size: 0.95em;
+    z-index: 100; opacity: 0.8; transition: opacity 0.2s;
+  }
+  #hub-link:hover { opacity: 1; }
+  canvas {
+    display: block; border-radius: 8px;
+    box-shadow: 0 0 40px rgba(123,47,247,0.3), 0 0 80px rgba(0,245,212,0.1);
+  }
+  .overlay {
+    position: fixed; inset: 0;
+    background: rgba(10,10,26,0.92);
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    z-index: 50; backdrop-filter: blur(6px);
+  }
+  .overlay.hidden { display: none; }
+  .overlay h1 {
+    font-size: 2.8em; margin-bottom: 10px;
+    background: linear-gradient(135deg, #7b2ff7, #00f5d4);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .overlay p { color: #aaa; margin-bottom: 8px; font-size: 1.1em; }
+  .overlay .score-display { font-size: 2em; color: #00f5d4; margin: 10px 0; }
+  .btn {
+    padding: 14px 50px; font-size: 1.1em; font-weight: bold;
+    border: none; border-radius: 8px; cursor: pointer;
+    background: linear-gradient(135deg, #7b2ff7, #00f5d4);
+    color: #fff; margin-top: 15px;
+    transition: transform 0.15s, box-shadow 0.15s;
+  }
+  .btn:hover { transform: scale(1.05); box-shadow: 0 0 20px rgba(0,245,212,0.4); }
+  #hud-score-live {
+    position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
+    font-size: 2.5em; font-weight: bold; color: #00f5d4; z-index: 10;
+    text-shadow: 0 0 20px rgba(0,245,212,0.5);
+  }
+  #hud-score-live.hidden { display: none; }
+</style>
+</head>
+<body>
+<a id="hub-link" href="/">&#8592; Back to Hub</a>
+<div id="hud-score-live" class="hidden">0</div>
+<canvas id="c"></canvas>
+
+<div class="overlay" id="start-screen">
+  <h1>Flappy Dash</h1>
+  <p>Tap or press Space to fly!</p>
+  <p style="color:#666;font-size:0.9em;">Dodge the neon pipes</p>
+  <button class="btn" id="start-btn">Play</button>
+</div>
+
+<div class="overlay hidden" id="game-over-screen">
+  <h1>Game Over</h1>
+  <div class="score-display" id="final-score">0</div>
+  <p id="final-msg"></p>
+  <button class="btn" id="restart-btn">Play Again</button>
+</div>
+
+<script src="/shared/game-client.js"></script>
+<script>
+PlayFunClient.init('flappy-dash', 'GAME_ID_HERE');
+
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H, dpr;
+
+function resize() {
+  dpr = window.devicePixelRatio || 1;
+  W = Math.min(window.innerWidth - 20, 420);
+  H = Math.min(window.innerHeight - 20, 700);
+  canvas.width = W * dpr; canvas.height = H * dpr;
+  canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+resize();
+window.addEventListener('resize', resize);
+
+const GRAVITY = 0.45;
+const FLAP = -7.5;
+const PIPE_W = 52;
+const GAP = 150;
+const PIPE_SPEED = 2.5;
+const BIRD_R = 14;
+
+let bird, pipes, score, gameRunning, animId, stars;
+
+function initStars() {
+  stars = [];
+  for (let i = 0; i < 50; i++) {
+    stars.push({ x: Math.random() * W, y: Math.random() * H, r: Math.random() * 1.5 + 0.5, s: Math.random() * 0.3 + 0.1 });
+  }
+}
+
+function initGame() {
+  bird = { x: W * 0.28, y: H / 2, vy: 0, angle: 0 };
+  pipes = [];
+  score = 0;
+  initStars();
+  document.getElementById('hud-score-live').textContent = '0';
+}
+
+function flap() {
+  if (!gameRunning) return;
+  bird.vy = FLAP;
+}
+
+window.addEventListener('keydown', e => { if (e.code === 'Space' || e.key === 'ArrowUp') { e.preventDefault(); flap(); } });
+canvas.addEventListener('touchstart', e => { e.preventDefault(); flap(); });
+canvas.addEventListener('mousedown', flap);
+
+function spawnPipe() {
+  const minY = 80;
+  const maxY = H - GAP - 80;
+  const topH = Math.random() * (maxY - minY) + minY;
+  pipes.push({ x: W + 10, topH: topH, scored: false });
+}
+
+function drawBird() {
+  ctx.save();
+  ctx.translate(bird.x, bird.y);
+  ctx.rotate(bird.angle);
+  // glow
+  ctx.shadowColor = '#00f5d4';
+  ctx.shadowBlur = 25;
+  // body
+  const g = ctx.createRadialGradient(0, 0, 2, 0, 0, BIRD_R);
+  g.addColorStop(0, '#fff');
+  g.addColorStop(0.5, '#00f5d4');
+  g.addColorStop(1, '#7b2ff7');
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(0, 0, BIRD_R, 0, Math.PI * 2);
+  ctx.fill();
+  // eye
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = '#0a0a1a';
+  ctx.beginPath();
+  ctx.arc(5, -3, 3.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.beginPath();
+  ctx.arc(6, -4, 1.5, 0, Math.PI * 2);
+  ctx.fill();
+  // beak
+  ctx.fillStyle = '#ff8c00';
+  ctx.beginPath();
+  ctx.moveTo(BIRD_R - 2, -2);
+  ctx.lineTo(BIRD_R + 8, 1);
+  ctx.lineTo(BIRD_R - 2, 4);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawPipe(p) {
+  ctx.save();
+  ctx.shadowColor = '#7b2ff7';
+  ctx.shadowBlur = 15;
+  // top pipe
+  const tg = ctx.createLinearGradient(p.x, 0, p.x + PIPE_W, 0);
+  tg.addColorStop(0, '#5a1fbf');
+  tg.addColorStop(0.5, '#7b2ff7');
+  tg.addColorStop(1, '#5a1fbf');
+  ctx.fillStyle = tg;
+  ctx.fillRect(p.x, 0, PIPE_W, p.topH);
+  // top cap
+  ctx.fillStyle = '#00f5d4';
+  ctx.shadowColor = '#00f5d4';
+  ctx.fillRect(p.x - 4, p.topH - 8, PIPE_W + 8, 8);
+  // bottom pipe
+  const botY = p.topH + GAP;
+  ctx.shadowColor = '#7b2ff7';
+  ctx.fillStyle = tg;
+  ctx.fillRect(p.x, botY, PIPE_W, H - botY);
+  // bottom cap
+  ctx.fillStyle = '#00f5d4';
+  ctx.shadowColor = '#00f5d4';
+  ctx.fillRect(p.x - 4, botY, PIPE_W + 8, 8);
+  ctx.restore();
+}
+
+function draw() {
+  ctx.fillStyle = '#0a0a1a';
+  ctx.fillRect(0, 0, W, H);
+  // stars
+  stars.forEach(s => {
+    s.x -= s.s;
+    if (s.x < 0) { s.x = W; s.y = Math.random() * H; }
+    ctx.fillStyle = `rgba(255,255,255,${0.3 + Math.sin(Date.now() * 0.003 + s.x) * 0.2})`;
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  // ground line
+  ctx.strokeStyle = '#7b2ff7';
+  ctx.lineWidth = 2;
+  ctx.shadowColor = '#7b2ff7';
+  ctx.shadowBlur = 10;
+  ctx.beginPath();
+  ctx.moveTo(0, H - 2);
+  ctx.lineTo(W, H - 2);
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  pipes.forEach(drawPipe);
+  drawBird();
+}
+
+function update() {
+  bird.vy += GRAVITY;
+  bird.y += bird.vy;
+  bird.angle = Math.min(bird.vy * 0.06, 1.2);
+
+  // spawn pipes
+  if (pipes.length === 0 || pipes[pipes.length - 1].x < W - 200) {
+    spawnPipe();
+  }
+
+  for (let i = pipes.length - 1; i >= 0; i--) {
+    const p = pipes[i];
+    p.x -= PIPE_SPEED;
+
+    // score
+    if (!p.scored && p.x + PIPE_W < bird.x) {
+      p.scored = true;
+      score++;
+      document.getElementById('hud-score-live').textContent = score;
+    }
+
+    // collision
+    if (bird.x + BIRD_R > p.x && bird.x - BIRD_R < p.x + PIPE_W) {
+      if (bird.y - BIRD_R < p.topH || bird.y + BIRD_R > p.topH + GAP) {
+        endGame(); return;
+      }
+    }
+
+    if (p.x + PIPE_W < -10) pipes.splice(i, 1);
+  }
+
+  // ceiling/floor
+  if (bird.y + BIRD_R > H || bird.y - BIRD_R < 0) {
+    endGame(); return;
+  }
+}
+
+function gameLoop() {
+  if (!gameRunning) return;
+  update();
+  draw();
+  animId = requestAnimationFrame(gameLoop);
+}
+
+function startGame() {
+  document.getElementById('start-screen').classList.add('hidden');
+  document.getElementById('game-over-screen').classList.add('hidden');
+  document.getElementById('hud-score-live').classList.remove('hidden');
+  initGame();
+  gameRunning = true;
+  gameLoop();
+}
+
+async function endGame() {
+  gameRunning = false;
+  cancelAnimationFrame(animId);
+  document.getElementById('hud-score-live').classList.add('hidden');
+  document.getElementById('final-score').textContent = score;
+  document.getElementById('final-msg').textContent = score > 20 ? 'Legendary!' : score > 10 ? 'Great job!' : 'Keep trying!';
+  document.getElementById('game-over-screen').classList.remove('hidden');
+  try { await PlayFunClient.submitScore(score); } catch(e) { console.warn(e); }
+}
+
+document.getElementById('start-btn').addEventListener('click', startGame);
+document.getElementById('restart-btn').addEventListener('click', startGame);
+</script>
+</body>
+</html>

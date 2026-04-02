@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="x-ogp-key" content="fa29b0ef-94e6-4a82-b20f-08336b32c6c8">
+<title>Gem Crush - Match-3 Puzzle</title>
+<script src="https://sdk.play.fun"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0a0a1a; color: #fff; font-family: 'Segoe UI', system-ui, sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+  canvas { border: 2px solid #2a2a4a; border-radius: 8px; cursor: pointer; }
+  #hud { display: flex; justify-content: space-between; width: 400px; margin-bottom: 10px; }
+  .hud-item .label { color: #888; font-size: 12px; text-transform: uppercase; }
+  .hud-item .value { color: #00f5d4; font-size: 1.8em; font-weight: bold; }
+  .overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(10,10,26,0.95); display: flex; align-items: center; justify-content: center; z-index: 10; }
+  .overlay-box { text-align: center; padding: 40px; }
+  .overlay-box h1 { color: #00f5d4; font-size: 2.5em; }
+  .overlay-box h2 { font-size: 2em; }
+  .overlay-box p { color: #888; margin: 8px 0; }
+  .big-score { color: #00f5d4; font-size: 3em; font-weight: bold; }
+  .btn { padding: 14px 50px; font-size: 1.1em; font-weight: bold; border: none; border-radius: 8px; cursor: pointer; background: linear-gradient(135deg, #7b2ff7, #00f5d4); color: #fff; margin-top: 15px; }
+  .back-link { position: fixed; top: 20px; right: 20px; color: #555; text-decoration: none; font-size: 14px; z-index: 20; }
+  .back-link:hover { color: #00f5d4; }
+  #timer-bar { width: 400px; height: 6px; background: #1a1a2a; border-radius: 3px; margin-top: 10px; overflow: hidden; }
+  #timer-fill { height: 100%; background: linear-gradient(90deg, #ff2770, #f5d400, #00f5d4); width: 100%; transition: width 0.5s; }
+</style>
+</head>
+<body>
+<a href="/" class="back-link">Back to Hub</a>
+<div>
+  <div id="hud">
+    <div class="hud-item"><div class="label">Score</div><div class="value" id="score">0</div></div>
+    <div class="hud-item"><div class="label">Moves</div><div class="value" id="moves">30</div></div>
+    <div class="hud-item"><div class="label">Combo</div><div class="value" id="combo">x1</div></div>
+  </div>
+  <canvas id="game" width="400" height="400"></canvas>
+  <div id="timer-bar"><div id="timer-fill"></div></div>
+</div>
+<div class="overlay" id="start-overlay">
+  <div class="overlay-box">
+    <h1>Gem Crush</h1>
+    <p>Swap adjacent gems to match 3+. Score big with combos!</p>
+    <button class="btn" onclick="startGame()">PLAY</button>
+  </div>
+</div>
+<div class="overlay" id="end-overlay" style="display:none;">
+  <div class="overlay-box">
+    <h2>No Moves Left!</h2>
+    <div class="big-score" id="final-score">0</div>
+    <p>Best: <span id="best">0</span></p>
+    <button class="btn" onclick="startGame()">PLAY AGAIN</button>
+  </div>
+</div>
+<script src="/shared/game-client.js"></script>
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const GRID = 8, CELL = 50;
+
+const GEM_COLORS = [
+  { fill: '#ff2770', glow: '#ff2770' },  // Red
+  { fill: '#00f5d4', glow: '#00f5d4' },  // Teal
+  { fill: '#7b2ff7', glow: '#7b2ff7' },  // Purple
+  { fill: '#f5d400', glow: '#f5d400' },  // Yellow
+  { fill: '#2196f3', glow: '#2196f3' },  // Blue
+  { fill: '#4caf50', glow: '#4caf50' },  // Green
+];
+
+let board, selected, score, moves, combo, animating, bestScore;
+bestScore = parseInt(localStorage.getItem('gem-crush-best') || '0');
+
+function createBoard() {
+  board = [];
+  for (let r = 0; r < GRID; r++) {
+    board[r] = [];
+    for (let c = 0; c < GRID; c++) {
+      let type;
+      do {
+        type = Math.floor(Math.random() * GEM_COLORS.length);
+      } while (
+        (c >= 2 && board[r][c-1] === type && board[r][c-2] === type) ||
+        (r >= 2 && board[r-1][c] === type && board[r-2][c] === type)
+      );
+      board[r][c] = type;
+    }
+  }
+}
+
+function startGame() {
+  document.getElementById('start-overlay').style.display = 'none';
+  document.getElementById('end-overlay').style.display = 'none';
+  createBoard();
+  selected = null;
+  score = 0; moves = 30; combo = 0; animating = false;
+  updateHUD();
+  draw();
+}
+
+function updateHUD() {
+  document.getElementById('score').textContent = score;
+  document.getElementById('moves').textContent = moves;
+  document.getElementById('combo').textContent = combo > 1 ? `x${combo}` : 'x1';
+  document.getElementById('timer-fill').style.width = (moves / 30 * 100) + '%';
+}
+
+function findMatches() {
+  const matched = new Set();
+  // Horizontal
+  for (let r = 0; r < GRID; r++) {
+    for (let c = 0; c < GRID - 2; c++) {
+      if (board[r][c] !== null && board[r][c] === board[r][c+1] && board[r][c] === board[r][c+2]) {
+        let end = c + 2;
+        while (end + 1 < GRID && board[r][end + 1] === board[r][c]) end++;
+        for (let k = c; k <= end; k++) matched.add(`${r},${k}`);
+      }
+    }
+  }
+  // Vertical
+  for (let c = 0; c < GRID; c++) {
+    for (let r = 0; r < GRID - 2; r++) {
+      if (board[r][c] !== null && board[r][c] === board[r+1][c] && board[r][c] === board[r+2][c]) {
+        let end = r + 2;
+        while (end + 1 < GRID && board[end + 1][c] === board[r][c]) end++;
+        for (let k = r; k <= end; k++) matched.add(`${k},${c}`);
+      }
+    }
+  }
+  return matched;
+}
+
+function removeMatches(matched) {
+  matched.forEach(key => {
+    const [r, c] = key.split(',').map(Number);
+    board[r][c] = null;
+  });
+}
+
+function dropGems() {
+  for (let c = 0; c < GRID; c++) {
+    let empty = GRID - 1;
+    for (let r = GRID - 1; r >= 0; r--) {
+      if (board[r][c] !== null) {
+        board[empty][c] = board[r][c];
+        if (empty !== r) board[r][c] = null;
+        empty--;
+      }
+    }
+    for (let r = empty; r >= 0; r--) {
+      board[r][c] = Math.floor(Math.random() * GEM_COLORS.length);
+    }
+  }
+}
+
+function processBoard() {
+  const matched = findMatches();
+  if (matched.size === 0) {
+    combo = 0;
+    animating = false;
+    if (moves <= 0) gameOver();
+    return;
+  }
+  combo++;
+  score += matched.size * 10 * combo;
+  updateHUD();
+  removeMatches(matched);
+  draw();
+
+  setTimeout(() => {
+    dropGems();
+    draw();
+    setTimeout(() => processBoard(), 200);
+  }, 200);
+}
+
+function swap(r1, c1, r2, c2) {
+  const temp = board[r1][c1];
+  board[r1][c1] = board[r2][c2];
+  board[r2][c2] = temp;
+}
+
+function handleClick(e) {
+  if (animating || moves <= 0) return;
+  const rect = canvas.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  const y = e.clientY - rect.top;
+  const c = Math.floor(x / CELL);
+  const r = Math.floor(y / CELL);
+  if (r < 0 || r >= GRID || c < 0 || c >= GRID) return;
+
+  if (!selected) {
+    selected = { r, c };
+    draw();
+    return;
+  }
+
+  const dr = Math.abs(r - selected.r);
+  const dc = Math.abs(c - selected.c);
+
+  if ((dr === 1 && dc === 0) || (dr === 0 && dc === 1)) {
+    // Adjacent — try swap
+    swap(selected.r, selected.c, r, c);
+    const matched = findMatches();
+    if (matched.size > 0) {
+      moves--;
+      animating = true;
+      selected = null;
+      updateHUD();
+      draw();
+      setTimeout(() => processBoard(), 100);
+    } else {
+      swap(selected.r, selected.c, r, c); // Swap back
+      selected = null;
+      draw();
+    }
+  } else {
+    selected = { r, c };
+    draw();
+  }
+}
+
+canvas.addEventListener('click', handleClick);
+
+// Touch
+let touchR, touchC;
+canvas.addEventListener('touchstart', e => {
+  const rect = canvas.getBoundingClientRect();
+  touchR = Math.floor((e.touches[0].clientY - rect.top) / CELL);
+  touchC = Math.floor((e.touches[0].clientX - rect.left) / CELL);
+});
+canvas.addEventListener('touchend', e => {
+  if (!e.changedTouches[0]) return;
+  const rect = canvas.getBoundingClientRect();
+  const endR = Math.floor((e.changedTouches[0].clientY - rect.top) / CELL);
+  const endC = Math.floor((e.changedTouches[0].clientX - rect.left) / CELL);
+  if (endR === touchR && endC === touchC) {
+    handleClick({ clientX: e.changedTouches[0].clientX, clientY: e.changedTouches[0].clientY });
+  }
+});
+
+function draw() {
+  ctx.fillStyle = '#0a0a1a';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  for (let r = 0; r < GRID; r++) {
+    for (let c = 0; c < GRID; c++) {
+      const x = c * CELL, y = r * CELL;
+
+      // Cell bg
+      ctx.fillStyle = (r + c) % 2 === 0 ? '#111122' : '#0e0e1e';
+      ctx.fillRect(x, y, CELL, CELL);
+
+      if (board[r][c] === null) continue;
+      const gem = GEM_COLORS[board[r][c]];
+
+      // Selected highlight
+      if (selected && selected.r === r && selected.c === c) {
+        ctx.fillStyle = 'rgba(123,47,247,0.3)';
+        ctx.fillRect(x, y, CELL, CELL);
+      }
+
+      // Gem
+      ctx.shadowColor = gem.glow;
+      ctx.shadowBlur = 8;
+      ctx.fillStyle = gem.fill;
+      ctx.beginPath();
+      ctx.arc(x + CELL / 2, y + CELL / 2, CELL / 2 - 6, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Shine
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = 'rgba(255,255,255,0.2)';
+      ctx.beginPath();
+      ctx.arc(x + CELL / 2 - 4, y + CELL / 2 - 4, CELL / 4 - 4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  ctx.shadowBlur = 0;
+}
+
+async function gameOver() {
+  if (score > bestScore) { bestScore = score; localStorage.setItem('gem-crush-best', bestScore); }
+  document.getElementById('final-score').textContent = score;
+  document.getElementById('best').textContent = bestScore;
+  document.getElementById('end-overlay').style.display = 'flex';
+  await PlayFunClient.submitScore(score);
+}
+
+PlayFunClient.init('gem-crush', 'GAME_ID_HERE');
+</script>
+</body>
+</html>

@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="x-ogp-key" content="fa29b0ef-94e6-4a82-b20f-08336b32c6c8">
+<title>Aim Trainer - Precision</title>
+<script src="https://sdk.play.fun"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0a0a1a; color: #fff; font-family: 'Segoe UI', system-ui, sans-serif; overflow: hidden; cursor: crosshair; }
+  canvas { display: block; }
+  #ui { position: absolute; top: 0; left: 0; width: 100%; pointer-events: none; z-index: 10; }
+  #hud { display: flex; justify-content: center; gap: 40px; padding: 20px; }
+  .hud-item .label { color: #888; font-size: 11px; text-transform: uppercase; }
+  .hud-item .value { color: #00f5d4; font-size: 1.5em; font-weight: bold; }
+  #timer-bar { width: 80%; max-width: 400px; height: 4px; background: #1a1a2a; border-radius: 2px; margin: 0 auto; overflow: hidden; }
+  #timer-fill { height: 100%; background: #00f5d4; width: 100%; transition: width 0.1s; }
+  .overlay { position: fixed; top:0; left:0; width:100%; height:100%; background:rgba(10,10,26,0.95); display:flex; align-items:center; justify-content:center; z-index:10; cursor: default; }
+  .overlay-box { text-align: center; padding: 40px; }
+  .overlay-box h1 { color: #00f5d4; font-size: 2.5em; }
+  .overlay-box h2 { font-size: 2em; }
+  .overlay-box p { color: #888; margin: 8px 0; }
+  .big-score { color: #00f5d4; font-size: 3em; font-weight: bold; }
+  .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 15px 0; text-align: left; }
+  .stat-grid .stat { padding: 8px 12px; background: #14141f; border-radius: 8px; }
+  .stat-grid .stat-label { color: #888; font-size: 0.8em; }
+  .stat-grid .stat-val { color: #00f5d4; font-size: 1.2em; font-weight: bold; }
+  .btn { padding: 14px 50px; font-size: 1.1em; font-weight: bold; border: none; border-radius: 8px; cursor: pointer; background: linear-gradient(135deg, #7b2ff7, #00f5d4); color: #fff; margin-top: 15px; }
+  .back-link { position: fixed; top: 20px; right: 20px; color: #555; text-decoration: none; font-size: 14px; z-index: 20; cursor: pointer; pointer-events: all; }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<div id="ui">
+  <div id="hud">
+    <div class="hud-item"><div class="label">Hits</div><div class="value" id="hits">0</div></div>
+    <div class="hud-item"><div class="label">Misses</div><div class="value" id="misses">0</div></div>
+    <div class="hud-item"><div class="label">Time</div><div class="value" id="time">30</div></div>
+    <div class="hud-item"><div class="label">Accuracy</div><div class="value" id="accuracy">-</div></div>
+  </div>
+  <div id="timer-bar"><div id="timer-fill"></div></div>
+</div>
+<a href="/" class="back-link">Back to Hub</a>
+<div class="overlay" id="start-overlay">
+  <div class="overlay-box">
+    <h1>Aim Trainer</h1>
+    <p>Click the targets as fast as you can. 30 seconds!</p>
+    <button class="btn" onclick="startGame()">AIM</button>
+  </div>
+</div>
+<div class="overlay" id="end-overlay" style="display:none;">
+  <div class="overlay-box">
+    <h2>Results</h2>
+    <div class="big-score" id="final-score">0</div>
+    <div class="stat-grid">
+      <div class="stat"><div class="stat-label">Hits</div><div class="stat-val" id="f-hits">0</div></div>
+      <div class="stat"><div class="stat-label">Misses</div><div class="stat-val" id="f-misses">0</div></div>
+      <div class="stat"><div class="stat-label">Accuracy</div><div class="stat-val" id="f-accuracy">0%</div></div>
+      <div class="stat"><div class="stat-label">Avg React</div><div class="stat-val" id="f-react">0ms</div></div>
+    </div>
+    <button class="btn" onclick="startGame()">AGAIN</button>
+  </div>
+</div>
+<script src="/shared/game-client.js"></script>
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+let W, H;
+function resize() { W = canvas.width = window.innerWidth; H = canvas.height = window.innerHeight; }
+resize(); window.addEventListener('resize', resize);
+
+let targets, hits, misses, timeLeft, gameActive, timerInterval, reactions, lastSpawn;
+const DURATION = 30;
+
+function spawnTarget() {
+  const r = 20 + Math.random() * 25;
+  const x = r + Math.random() * (W - 2 * r);
+  const y = 80 + r + Math.random() * (H - 120 - 2 * r);
+  targets.push({ x, y, r, born: Date.now(), life: 2000, shrinking: false });
+}
+
+function startGame() {
+  document.getElementById('start-overlay').style.display = 'none';
+  document.getElementById('end-overlay').style.display = 'none';
+  targets = []; hits = 0; misses = 0; timeLeft = DURATION; reactions = []; gameActive = true;
+  lastSpawn = 0;
+  updateHUD();
+  spawnTarget(); spawnTarget(); spawnTarget();
+
+  clearInterval(timerInterval);
+  timerInterval = setInterval(() => {
+    timeLeft -= 0.1;
+    document.getElementById('time').textContent = Math.ceil(timeLeft);
+    document.getElementById('timer-fill').style.width = (timeLeft / DURATION * 100) + '%';
+    if (timeLeft <= 0) endGame();
+  }, 100);
+
+  requestAnimationFrame(loop);
+}
+
+canvas.addEventListener('click', e => {
+  if (!gameActive) return;
+  const mx = e.clientX, my = e.clientY;
+  let hit = false;
+
+  for (let i = targets.length - 1; i >= 0; i--) {
+    const t = targets[i];
+    const dx = mx - t.x, dy = my - t.y;
+    if (Math.sqrt(dx*dx + dy*dy) <= t.r) {
+      hits++;
+      reactions.push(Date.now() - t.born);
+      targets.splice(i, 1);
+      spawnTarget();
+      hit = true;
+      break;
+    }
+  }
+
+  if (!hit) misses++;
+  updateHUD();
+});
+
+function updateHUD() {
+  document.getElementById('hits').textContent = hits;
+  document.getElementById('misses').textContent = misses;
+  const total = hits + misses;
+  document.getElementById('accuracy').textContent = total > 0 ? Math.round(hits / total * 100) + '%' : '-';
+}
+
+function draw() {
+  ctx.fillStyle = '#0a0a1a';
+  ctx.fillRect(0, 0, W, H);
+
+  // Grid pattern
+  ctx.strokeStyle = '#111122';
+  ctx.lineWidth = 0.5;
+  for (let x = 0; x < W; x += 40) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+  for (let y = 0; y < H; y += 40) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+
+  targets.forEach(t => {
+    const age = (Date.now() - t.born) / t.life;
+    const scale = age > 0.7 ? 1 - (age - 0.7) / 0.3 : 1;
+    const r = t.r * scale;
+
+    // Outer ring
+    ctx.strokeStyle = '#ff2770';
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(t.x, t.y, r, 0, Math.PI * 2); ctx.stroke();
+
+    // Inner fill
+    ctx.fillStyle = 'rgba(255,39,112,0.3)';
+    ctx.beginPath(); ctx.arc(t.x, t.y, r, 0, Math.PI * 2); ctx.fill();
+
+    // Bullseye
+    ctx.fillStyle = '#ff2770';
+    ctx.beginPath(); ctx.arc(t.x, t.y, r * 0.3, 0, Math.PI * 2); ctx.fill();
+
+    // Expire targets
+    if (age >= 1) {
+      t.expired = true;
+    }
+  });
+
+  // Remove expired
+  const expired = targets.filter(t => t.expired).length;
+  targets = targets.filter(t => !t.expired);
+  misses += expired;
+  for (let i = 0; i < expired; i++) spawnTarget();
+  if (expired > 0) updateHUD();
+}
+
+function loop() {
+  if (!gameActive) return;
+  draw();
+  // Keep 3 targets alive
+  while (targets.length < 3) spawnTarget();
+  requestAnimationFrame(loop);
+}
+
+async function endGame() {
+  gameActive = false;
+  clearInterval(timerInterval);
+  const total = hits + misses;
+  const accuracy = total > 0 ? Math.round(hits / total * 100) : 0;
+  const avgReact = reactions.length > 0 ? Math.round(reactions.reduce((a,b) => a+b, 0) / reactions.length) : 0;
+  const score = hits * 10 + accuracy * 2;
+
+  document.getElementById('final-score').textContent = score;
+  document.getElementById('f-hits').textContent = hits;
+  document.getElementById('f-misses').textContent = misses;
+  document.getElementById('f-accuracy').textContent = accuracy + '%';
+  document.getElementById('f-react').textContent = avgReact + 'ms';
+  document.getElementById('end-overlay').style.display = 'flex';
+  await PlayFunClient.submitScore(score);
+}
+
+PlayFunClient.init('aim-trainer', 'GAME_ID_HERE');
+</script>
+</body>
+</html>

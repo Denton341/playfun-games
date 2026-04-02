@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="x-ogp-key" content="fa29b0ef-94e6-4a82-b20f-08336b32c6c8">
+<title>Whack-A-Mole</title>
+<script src="https://sdk.play.fun"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a1a;
+    color: #fff;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    overflow: hidden;
+  }
+  .hub-link {
+    position: fixed; top: 15px; right: 20px;
+    color: #00f5d4; text-decoration: none; font-size: 0.95em;
+    z-index: 100; opacity: 0.8; transition: opacity 0.2s;
+  }
+  .hub-link:hover { opacity: 1; }
+  .btn {
+    padding: 14px 50px; font-size: 1.1em; font-weight: bold;
+    border: none; border-radius: 8px; cursor: pointer;
+    background: linear-gradient(135deg, #7b2ff7, #00f5d4);
+    color: #fff; margin-top: 15px; transition: transform 0.15s, box-shadow 0.15s;
+  }
+  .btn:hover { transform: scale(1.05); box-shadow: 0 0 25px rgba(0,245,212,0.4); }
+  .btn:active { transform: scale(0.97); }
+  .overlay {
+    position: fixed; inset: 0; background: rgba(10,10,26,0.92);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    z-index: 50; backdrop-filter: blur(6px);
+  }
+  .overlay h1 { font-size: 2.8em; margin-bottom: 10px; background: linear-gradient(135deg, #7b2ff7, #00f5d4); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  .overlay p { font-size: 1.2em; color: #aaa; margin-bottom: 5px; }
+  .overlay .final-score { font-size: 3em; color: #00f5d4; margin: 10px 0; text-shadow: 0 0 20px rgba(0,245,212,0.5); }
+  #hud {
+    display: flex; justify-content: space-between; width: 340px; max-width: 90vw;
+    margin: 60px 0 20px; font-size: 1.3em;
+  }
+  #hud span { color: #00f5d4; }
+  .grid {
+    display: grid; grid-template-columns: repeat(3, 100px); grid-template-rows: repeat(3, 100px);
+    gap: 12px;
+  }
+  .hole {
+    width: 100px; height: 100px; border-radius: 50%;
+    background: radial-gradient(circle, #1a1a3a 60%, #0f0f2a);
+    border: 3px solid #222;
+    position: relative; overflow: hidden; cursor: pointer;
+    transition: border-color 0.15s;
+  }
+  .hole:hover { border-color: #444; }
+  .mole {
+    position: absolute; bottom: -100%; left: 50%; transform: translateX(-50%);
+    width: 70px; height: 70px; border-radius: 50%;
+    background: radial-gradient(circle at 35% 35%, #b87333, #8b4513);
+    transition: bottom 0.15s ease-out;
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+  }
+  .mole::before {
+    content: ''; position: absolute; width: 12px; height: 12px;
+    background: #111; border-radius: 50%; top: 22px; left: 18px;
+    box-shadow: 22px 0 0 #111;
+  }
+  .mole::after {
+    content: ''; position: absolute; width: 16px; height: 8px;
+    background: #a0522d; border-radius: 50%; top: 40px; left: 50%; transform: translateX(-50%);
+  }
+  .hole.active .mole { bottom: 10%; }
+  .hole.whacked .mole {
+    bottom: 10%;
+    background: radial-gradient(circle at 35% 35%, #ff2770, #cc1155);
+    transform: translateX(-50%) scale(0.7);
+    opacity: 0.6;
+  }
+  .hit-effect {
+    position: absolute; inset: 0; border-radius: 50%;
+    background: radial-gradient(circle, rgba(0,245,212,0.4), transparent);
+    animation: hitPulse 0.3s ease-out forwards; pointer-events: none;
+  }
+  @keyframes hitPulse {
+    0% { transform: scale(0.5); opacity: 1; }
+    100% { transform: scale(1.5); opacity: 0; }
+  }
+  .float-point {
+    position: absolute; color: #00f5d4; font-weight: bold; font-size: 1.4em;
+    pointer-events: none; animation: floatUp 0.7s ease-out forwards;
+    text-shadow: 0 0 10px rgba(0,245,212,0.6);
+  }
+  @keyframes floatUp {
+    0% { opacity: 1; transform: translateY(0); }
+    100% { opacity: 0; transform: translateY(-50px); }
+  }
+</style>
+</head>
+<body>
+<a class="hub-link" href="/">&#8592; Back to Hub</a>
+
+<div id="startScreen" class="overlay">
+  <h1>Whack-A-Mole</h1>
+  <p>Click the moles before they hide!</p>
+  <p style="color:#666; font-size:0.9em;">30 seconds - score as many as you can</p>
+  <button class="btn" onclick="startGame()">Play</button>
+</div>
+
+<div id="gameOverScreen" class="overlay" style="display:none;">
+  <h1>Time's Up!</h1>
+  <p>Your Score</p>
+  <div class="final-score" id="finalScore">0</div>
+  <button class="btn" onclick="startGame()">Play Again</button>
+</div>
+
+<div id="hud">
+  <div>Score: <span id="scoreDisplay">0</span></div>
+  <div>Time: <span id="timeDisplay">30</span>s</div>
+</div>
+
+<div class="grid" id="grid"></div>
+
+<script src="/shared/game-client.js"></script>
+<script>
+PlayFunClient.init('whack-a-mole', 'GAME_ID_HERE');
+
+const grid = document.getElementById('grid');
+const scoreDisplay = document.getElementById('scoreDisplay');
+const timeDisplay = document.getElementById('timeDisplay');
+const startScreen = document.getElementById('startScreen');
+const gameOverScreen = document.getElementById('gameOverScreen');
+const finalScoreEl = document.getElementById('finalScore');
+
+let score = 0, timeLeft = 30, gameActive = false;
+let moleTimer, gameTimer, speedMin = 600, speedMax = 1200;
+
+// Build grid
+for (let i = 0; i < 9; i++) {
+  const hole = document.createElement('div');
+  hole.className = 'hole';
+  hole.dataset.index = i;
+  hole.innerHTML = '<div class="mole"></div>';
+  hole.addEventListener('click', () => whack(hole));
+  grid.appendChild(hole);
+}
+
+const holes = document.querySelectorAll('.hole');
+
+function whack(hole) {
+  if (!gameActive || !hole.classList.contains('active') || hole.classList.contains('whacked')) return;
+  hole.classList.remove('active');
+  hole.classList.add('whacked');
+  score++;
+  scoreDisplay.textContent = score;
+
+  // Hit effect
+  const fx = document.createElement('div');
+  fx.className = 'hit-effect';
+  hole.appendChild(fx);
+  setTimeout(() => fx.remove(), 300);
+
+  // Float point
+  const fp = document.createElement('div');
+  fp.className = 'float-point';
+  fp.textContent = '+1';
+  fp.style.left = '35%'; fp.style.top = '10%';
+  hole.appendChild(fp);
+  setTimeout(() => fp.remove(), 700);
+
+  setTimeout(() => hole.classList.remove('whacked'), 200);
+}
+
+function showMole() {
+  if (!gameActive) return;
+  const available = [...holes].filter(h => !h.classList.contains('active') && !h.classList.contains('whacked'));
+  if (available.length === 0) { scheduleMole(); return; }
+  const hole = available[Math.floor(Math.random() * available.length)];
+  hole.classList.add('active');
+  const duration = 800 + Math.random() * 600 - (30 - timeLeft) * 10;
+  setTimeout(() => {
+    hole.classList.remove('active');
+  }, Math.max(400, duration));
+  scheduleMole();
+}
+
+function scheduleMole() {
+  if (!gameActive) return;
+  const delay = speedMin + Math.random() * (speedMax - speedMin);
+  moleTimer = setTimeout(showMole, delay - (30 - timeLeft) * 8);
+}
+
+function startGame() {
+  startScreen.style.display = 'none';
+  gameOverScreen.style.display = 'none';
+  score = 0; timeLeft = 30; gameActive = true;
+  scoreDisplay.textContent = 0;
+  timeDisplay.textContent = 30;
+  holes.forEach(h => { h.classList.remove('active', 'whacked'); });
+
+  // Spawn 1-2 moles at staggered times
+  showMole();
+  setTimeout(showMole, 400);
+
+  gameTimer = setInterval(() => {
+    timeLeft--;
+    timeDisplay.textContent = timeLeft;
+    if (timeLeft <= 0) endGame();
+  }, 1000);
+}
+
+async function endGame() {
+  gameActive = false;
+  clearInterval(gameTimer);
+  clearTimeout(moleTimer);
+  holes.forEach(h => h.classList.remove('active', 'whacked'));
+  finalScoreEl.textContent = score;
+  gameOverScreen.style.display = 'flex';
+  try { await PlayFunClient.submitScore(score); } catch(e) { console.warn('Score submit failed', e); }
+}
+</script>
+</body>
+</html>

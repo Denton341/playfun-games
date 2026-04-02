@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="x-ogp-key" content="fa29b0ef-94e6-4a82-b20f-08336b32c6c8">
+<title>Bubble Pop</title>
+<script src="https://sdk.play.fun"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a1a; color: #fff;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    min-height: 100vh; display: flex; flex-direction: column; align-items: center;
+    overflow: hidden;
+  }
+  .hub-link {
+    position: fixed; top: 15px; right: 20px;
+    color: #00f5d4; text-decoration: none; font-size: 0.95em;
+    z-index: 100; opacity: 0.8; transition: opacity 0.2s;
+  }
+  .hub-link:hover { opacity: 1; }
+  .btn {
+    padding: 14px 50px; font-size: 1.1em; font-weight: bold;
+    border: none; border-radius: 8px; cursor: pointer;
+    background: linear-gradient(135deg, #7b2ff7, #00f5d4);
+    color: #fff; margin-top: 15px; transition: transform 0.15s, box-shadow 0.15s;
+  }
+  .btn:hover { transform: scale(1.05); box-shadow: 0 0 25px rgba(0,245,212,0.4); }
+  .btn:active { transform: scale(0.97); }
+  .overlay {
+    position: fixed; inset: 0; background: rgba(10,10,26,0.92);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    z-index: 50; backdrop-filter: blur(6px);
+  }
+  .overlay h1 { font-size: 2.8em; margin-bottom: 10px; background: linear-gradient(135deg, #7b2ff7, #00f5d4); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  .overlay p { font-size: 1.2em; color: #aaa; margin-bottom: 5px; }
+  .overlay .final-score { font-size: 3em; color: #00f5d4; margin: 10px 0; text-shadow: 0 0 20px rgba(0,245,212,0.5); }
+  #hud {
+    position: fixed; top: 15px; left: 20px;
+    display: flex; gap: 30px; font-size: 1.2em; z-index: 10;
+  }
+  #hud span { color: #00f5d4; }
+  canvas {
+    display: block; margin-top: 50px; cursor: crosshair;
+    border-radius: 8px;
+  }
+</style>
+</head>
+<body>
+<a class="hub-link" href="/">&#8592; Back to Hub</a>
+
+<div id="startScreen" class="overlay">
+  <h1>Bubble Pop</h1>
+  <p>Click bubbles to pop clusters of 3+</p>
+  <p style="color:#666; font-size:0.9em;">Bigger clusters = more points!</p>
+  <button class="btn" onclick="startGame()">Play</button>
+</div>
+
+<div id="gameOverScreen" class="overlay" style="display:none;">
+  <h1>Game Over!</h1>
+  <p>Your Score</p>
+  <div class="final-score" id="finalScore">0</div>
+  <button class="btn" onclick="startGame()">Play Again</button>
+</div>
+
+<div id="hud">
+  <div>Score: <span id="scoreDisplay">0</span></div>
+  <div>Bubbles: <span id="bubbleCount">0</span></div>
+</div>
+
+<canvas id="canvas"></canvas>
+
+<script src="/shared/game-client.js"></script>
+<script>
+PlayFunClient.init('bubble-pop', 'GAME_ID_HERE');
+
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const W = canvas.width = Math.min(500, window.innerWidth - 20);
+const H = canvas.height = Math.min(700, window.innerHeight - 70);
+
+const COLORS = [
+  { fill: '#ff2770', glow: 'rgba(255,39,112,0.4)' },
+  { fill: '#00f5d4', glow: 'rgba(0,245,212,0.4)' },
+  { fill: '#7b2ff7', glow: 'rgba(123,47,247,0.4)' },
+  { fill: '#ffd700', glow: 'rgba(255,215,0,0.4)' },
+  { fill: '#00b4d8', glow: 'rgba(0,180,216,0.4)' },
+];
+
+let bubbles = [], particles = [], score = 0, gameActive = false;
+let spawnTimer = 0, maxBubbles = 60, gameOverTriggered = false;
+const RADIUS = 22;
+
+class Bubble {
+  constructor(x, y, colorIdx) {
+    this.x = x; this.y = y;
+    this.colorIdx = colorIdx;
+    this.vy = -0.3 - Math.random() * 0.5;
+    this.vx = (Math.random() - 0.5) * 0.3;
+    this.radius = RADIUS;
+    this.alive = true;
+    this.pulse = Math.random() * Math.PI * 2;
+  }
+  update() {
+    this.y += this.vy;
+    this.x += this.vx;
+    this.pulse += 0.05;
+    if (this.x < this.radius) this.vx = Math.abs(this.vx);
+    if (this.x > W - this.radius) this.vx = -Math.abs(this.vx);
+    if (this.y < -this.radius * 2) this.alive = false;
+  }
+  draw() {
+    const c = COLORS[this.colorIdx];
+    const r = this.radius + Math.sin(this.pulse) * 2;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, r, 0, Math.PI * 2);
+    ctx.fillStyle = c.fill;
+    ctx.shadowColor = c.glow;
+    ctx.shadowBlur = 15;
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    // highlight
+    ctx.beginPath();
+    ctx.arc(this.x - r * 0.25, this.y - r * 0.25, r * 0.3, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255,255,255,0.3)';
+    ctx.fill();
+  }
+}
+
+class Particle {
+  constructor(x, y, color) {
+    this.x = x; this.y = y; this.color = color;
+    this.vx = (Math.random() - 0.5) * 6;
+    this.vy = (Math.random() - 0.5) * 6;
+    this.life = 1; this.decay = 0.02 + Math.random() * 0.03;
+    this.radius = 3 + Math.random() * 4;
+  }
+  update() { this.x += this.vx; this.y += this.vy; this.life -= this.decay; }
+  draw() {
+    ctx.globalAlpha = this.life;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+    ctx.fillStyle = this.color;
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+}
+
+function spawnBubble() {
+  const x = RADIUS + Math.random() * (W - RADIUS * 2);
+  const colorIdx = Math.floor(Math.random() * COLORS.length);
+  bubbles.push(new Bubble(x, H + RADIUS, colorIdx));
+}
+
+function findCluster(target) {
+  const cluster = [target];
+  const visited = new Set([bubbles.indexOf(target)]);
+  const stack = [target];
+  while (stack.length) {
+    const b = stack.pop();
+    for (let i = 0; i < bubbles.length; i++) {
+      if (visited.has(i) || !bubbles[i].alive) continue;
+      const other = bubbles[i];
+      if (other.colorIdx !== b.colorIdx) continue;
+      const dx = b.x - other.x, dy = b.y - other.y;
+      if (Math.sqrt(dx * dx + dy * dy) < RADIUS * 2.5) {
+        visited.add(i);
+        cluster.push(other);
+        stack.push(other);
+      }
+    }
+  }
+  return cluster;
+}
+
+function popCluster(cluster) {
+  cluster.forEach(b => {
+    b.alive = false;
+    for (let i = 0; i < 8; i++) {
+      particles.push(new Particle(b.x, b.y, COLORS[b.colorIdx].fill));
+    }
+  });
+  const pts = cluster.length * cluster.length * 10;
+  score += pts;
+  document.getElementById('scoreDisplay').textContent = score;
+  showFloatScore(cluster[0].x, cluster[0].y, pts);
+}
+
+function showFloatScore(x, y, pts) {
+  const el = document.createElement('div');
+  el.textContent = '+' + pts;
+  el.style.cssText = `position:fixed;left:${canvas.offsetLeft + x}px;top:${canvas.offsetTop + y}px;color:#00f5d4;font-weight:bold;font-size:1.4em;pointer-events:none;z-index:20;text-shadow:0 0 10px rgba(0,245,212,0.6);animation:floatUp 0.8s ease-out forwards;`;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 800);
+}
+
+canvas.addEventListener('click', (e) => {
+  if (!gameActive) return;
+  const rect = canvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+  let closest = null, closestDist = Infinity;
+  for (const b of bubbles) {
+    if (!b.alive) continue;
+    const dx = mx - b.x, dy = my - b.y;
+    const d = Math.sqrt(dx * dx + dy * dy);
+    if (d < b.radius + 5 && d < closestDist) { closest = b; closestDist = d; }
+  }
+  if (!closest) return;
+  const cluster = findCluster(closest);
+  if (cluster.length >= 3) popCluster(cluster);
+});
+
+function update() {
+  bubbles = bubbles.filter(b => b.alive);
+  bubbles.forEach(b => b.update());
+  particles = particles.filter(p => p.life > 0);
+  particles.forEach(p => p.update());
+  document.getElementById('bubbleCount').textContent = bubbles.length;
+
+  spawnTimer++;
+  if (spawnTimer % 30 === 0 && bubbles.length < maxBubbles) {
+    spawnBubble();
+    if (Math.random() > 0.5) spawnBubble();
+  }
+
+  // Game over if too many bubbles escape top
+  const escaped = bubbles.filter(b => b.y < 10).length;
+  if (escaped >= 10 && !gameOverTriggered) {
+    gameOverTriggered = true;
+    endGame();
+  }
+}
+
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  // bg gradient
+  const grad = ctx.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0, '#0a0a1a');
+  grad.addColorStop(1, '#0f0f2f');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+
+  bubbles.forEach(b => { if (b.alive) b.draw(); });
+  particles.forEach(p => p.draw());
+}
+
+function loop() {
+  if (!gameActive) return;
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+
+function startGame() {
+  document.getElementById('startScreen').style.display = 'none';
+  document.getElementById('gameOverScreen').style.display = 'none';
+  bubbles = []; particles = []; score = 0; spawnTimer = 0;
+  gameActive = true; gameOverTriggered = false;
+  document.getElementById('scoreDisplay').textContent = 0;
+  // Initial bubbles
+  for (let i = 0; i < 15; i++) {
+    const x = RADIUS + Math.random() * (W - RADIUS * 2);
+    const y = H * 0.4 + Math.random() * H * 0.5;
+    bubbles.push(new Bubble(x, y, Math.floor(Math.random() * COLORS.length)));
+  }
+  loop();
+}
+
+async function endGame() {
+  gameActive = false;
+  document.getElementById('finalScore').textContent = score;
+  document.getElementById('gameOverScreen').style.display = 'flex';
+  try { await PlayFunClient.submitScore(score); } catch(e) { console.warn('Score submit failed', e); }
+}
+
+// Float animation
+const style = document.createElement('style');
+style.textContent = '@keyframes floatUp{0%{opacity:1;transform:translateY(0)}100%{opacity:0;transform:translateY(-50px)}}';
+document.head.appendChild(style);
+</script>
+</body>
+</html>

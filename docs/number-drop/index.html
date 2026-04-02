@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="x-ogp-key" content="fa29b0ef-94e6-4a82-b20f-08336b32c6c8">
+<title>Number Drop - Play.fun</title>
+<script src="https://sdk.play.fun"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a1a; color: #fff;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    min-height: 100vh; overflow: hidden;
+  }
+  .hub-link {
+    position: fixed; top: 16px; right: 20px; z-index: 1000;
+    color: #00f5d4; text-decoration: none; font-size: 0.95em;
+    opacity: 0.8; transition: opacity 0.2s;
+  }
+  .hub-link:hover { opacity: 1; }
+  .btn {
+    padding: 14px 50px; font-size: 1.1em; font-weight: bold;
+    border: none; border-radius: 8px; cursor: pointer;
+    background: linear-gradient(135deg, #7b2ff7, #00f5d4);
+    color: #fff; margin-top: 15px;
+    transition: transform 0.15s, box-shadow 0.15s;
+  }
+  .btn:hover { transform: translateY(-2px); box-shadow: 0 6px 25px rgba(123,47,247,0.5); }
+  .overlay {
+    position: fixed; inset: 0; background: rgba(10,10,26,0.95);
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: center; z-index: 100; animation: fadeIn 0.3s ease;
+  }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  .overlay h1 {
+    font-size: 3em; margin-bottom: 10px;
+    background: linear-gradient(135deg, #7b2ff7, #00f5d4);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .overlay p { color: #aaa; font-size: 1.1em; margin-bottom: 5px; max-width: 500px; text-align: center; }
+  .overlay .score-display {
+    font-size: 2.5em; font-weight: bold; color: #00f5d4;
+    text-shadow: 0 0 20px rgba(0,245,212,0.5); margin: 15px 0;
+  }
+  canvas { display: block; }
+  .hud {
+    position: fixed; top: 16px; left: 20px; z-index: 50;
+    font-size: 1em; color: #aaa;
+  }
+  .hud span { color: #00f5d4; font-weight: bold; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<a href="/" class="hub-link">&#8592; Back to Hub</a>
+<div class="hud hidden" id="hud">
+  Next: <span id="hud-next">1</span> &nbsp;|&nbsp;
+  Score: <span id="hud-score">0</span> &nbsp;|&nbsp;
+  Multiplier: <span id="hud-multi">x1.0</span>
+</div>
+
+<div id="start-screen" class="overlay">
+  <h1>Number Drop</h1>
+  <p>Numbers fall from the sky. Click them in order: 1, 2, 3...</p>
+  <p>Miss the next number and it's game over! Speed increases over time.</p>
+  <button class="btn" id="start-btn">Start Game</button>
+</div>
+
+<div id="gameover-screen" class="overlay hidden">
+  <h1>Game Over</h1>
+  <p>You reached number</p>
+  <div class="score-display" id="reached-num">0</div>
+  <p>Final Score</p>
+  <div class="score-display" id="final-score">0</div>
+  <button class="btn" id="restart-btn">Play Again</button>
+</div>
+
+<canvas id="canvas"></canvas>
+
+<script src="/shared/game-client.js"></script>
+<script>
+PlayFunClient.init('number-drop', 'GAME_ID_HERE');
+
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+let W, H;
+
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+let numbers = [];
+let nextExpected = 1;
+let score = 0;
+let multiplier = 1.0;
+let gameRunning = false;
+let spawnTimer = 0;
+let spawnInterval = 90;
+let fallSpeed = 1.5;
+let animFrame = null;
+let numbersOnScreen = new Set();
+let highestReached = 0;
+
+const hudNext = document.getElementById('hud-next');
+const hudScore = document.getElementById('hud-score');
+const hudMulti = document.getElementById('hud-multi');
+const hud = document.getElementById('hud');
+
+document.getElementById('start-btn').addEventListener('click', startGame);
+document.getElementById('restart-btn').addEventListener('click', startGame);
+
+function startGame() {
+  document.getElementById('start-screen').classList.add('hidden');
+  document.getElementById('gameover-screen').classList.add('hidden');
+  hud.classList.remove('hidden');
+  numbers = [];
+  numbersOnScreen = new Set();
+  nextExpected = 1;
+  score = 0;
+  multiplier = 1.0;
+  fallSpeed = 1.5;
+  spawnInterval = 90;
+  spawnTimer = 0;
+  highestReached = 0;
+  gameRunning = true;
+  updateHUD();
+  if (animFrame) cancelAnimationFrame(animFrame);
+  loop();
+}
+
+function spawnNumber() {
+  let val;
+  if (!numbersOnScreen.has(nextExpected) && Math.random() < 0.35) {
+    val = nextExpected;
+  } else {
+    val = Math.floor(Math.random() * 9) + 1;
+  }
+  // Ensure the next expected number appears regularly
+  if (nextExpected <= 9 && !numbersOnScreen.has(nextExpected) && spawnTimer % 3 === 0) {
+    val = nextExpected;
+  }
+  const r = 28;
+  numbers.push({
+    val,
+    x: r + Math.random() * (W - r * 2),
+    y: -r,
+    r,
+    vy: fallSpeed,
+    alpha: 1,
+    clicked: false,
+    glow: val === nextExpected ? 1 : 0,
+  });
+  numbersOnScreen.add(val);
+}
+
+function updateHUD() {
+  hudNext.textContent = nextExpected;
+  hudScore.textContent = score;
+  hudMulti.textContent = 'x' + multiplier.toFixed(1);
+}
+
+function loop() {
+  if (!gameRunning) return;
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = '#0a0a1a';
+  ctx.fillRect(0, 0, W, H);
+
+  spawnTimer++;
+  if (spawnTimer >= spawnInterval) {
+    spawnTimer = 0;
+    spawnNumber();
+    // Gradually speed up
+    if (spawnInterval > 35) spawnInterval -= 0.5;
+    if (fallSpeed < 4) fallSpeed += 0.02;
+  }
+
+  for (let i = numbers.length - 1; i >= 0; i--) {
+    const n = numbers[i];
+    if (n.clicked) {
+      n.alpha -= 0.05;
+      n.r += 2;
+      if (n.alpha <= 0) { numbers.splice(i, 1); continue; }
+    } else {
+      n.y += n.vy;
+      n.glow = n.val === nextExpected ? 1 : 0;
+      if (n.y - n.r > H) {
+        if (n.val === nextExpected) { gameOver(); return; }
+        numbersOnScreen.delete(n.val);
+        numbers.splice(i, 1);
+        continue;
+      }
+    }
+
+    // Draw
+    ctx.save();
+    ctx.globalAlpha = n.alpha;
+    if (n.glow) {
+      ctx.shadowColor = '#00f5d4';
+      ctx.shadowBlur = 20;
+    }
+    const grad = ctx.createRadialGradient(n.x, n.y, 0, n.x, n.y, n.r);
+    if (n.val === nextExpected) {
+      grad.addColorStop(0, '#7b2ff7');
+      grad.addColorStop(1, '#5a1fd0');
+    } else {
+      grad.addColorStop(0, '#2a2a4a');
+      grad.addColorStop(1, '#1a1a3a');
+    }
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 24px Segoe UI';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(n.val, n.x, n.y);
+    ctx.restore();
+  }
+
+  animFrame = requestAnimationFrame(loop);
+}
+
+canvas.addEventListener('click', (e) => {
+  if (!gameRunning) return;
+  const mx = e.clientX, my = e.clientY;
+  for (let i = numbers.length - 1; i >= 0; i--) {
+    const n = numbers[i];
+    if (n.clicked) continue;
+    const dx = mx - n.x, dy = my - n.y;
+    if (dx * dx + dy * dy < (n.r + 10) * (n.r + 10)) {
+      if (n.val === nextExpected) {
+        n.clicked = true;
+        numbersOnScreen.delete(n.val);
+        highestReached = nextExpected;
+        score += Math.round(nextExpected * multiplier * 100);
+        multiplier += 0.2;
+        nextExpected++;
+        if (nextExpected > 9) nextExpected = 1; // loop back
+        updateHUD();
+      } else {
+        // Wrong number - penalty
+        multiplier = Math.max(1.0, multiplier - 0.5);
+        updateHUD();
+        // Flash red
+        n.alpha = 0.3;
+      }
+      break;
+    }
+  }
+});
+
+canvas.addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  const t = e.touches[0];
+  canvas.dispatchEvent(new MouseEvent('click', { clientX: t.clientX, clientY: t.clientY }));
+}, { passive: false });
+
+async function gameOver() {
+  gameRunning = false;
+  hud.classList.add('hidden');
+  document.getElementById('reached-num').textContent = highestReached;
+  document.getElementById('final-score').textContent = score;
+  document.getElementById('gameover-screen').classList.remove('hidden');
+  try { await PlayFunClient.submitScore(score); } catch (e) { console.error(e); }
+}
+</script>
+</body>
+</html>

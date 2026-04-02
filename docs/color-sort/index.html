@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="x-ogp-key" content="fa29b0ef-94e6-4a82-b20f-08336b32c6c8">
+<title>Color Sort</title>
+<script src="https://sdk.play.fun"></script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #0a0a1a; color: #fff;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  min-height: 100vh; display: flex; flex-direction: column; align-items: center;
+  overflow-x: hidden;
+}
+.btn {
+  padding: 14px 50px; font-size: 1.1em; font-weight: bold; border: none;
+  border-radius: 8px; cursor: pointer;
+  background: linear-gradient(135deg, #7b2ff7, #00f5d4);
+  color: #fff; margin-top: 15px;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+.btn:hover { transform: scale(1.05); box-shadow: 0 0 25px rgba(0,245,212,0.4); }
+#hubLink {
+  position: fixed; top: 15px; right: 20px; z-index: 100;
+  color: #00f5d4; text-decoration: none; font-size: 0.95em;
+  opacity: 0.8; transition: opacity 0.2s;
+}
+#hubLink:hover { opacity: 1; }
+.overlay {
+  position: fixed; inset: 0; background: rgba(10,10,26,0.92);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  z-index: 50; text-align: center;
+}
+.overlay h1 {
+  font-size: 2.8em; margin-bottom: 10px;
+  background: linear-gradient(135deg, #7b2ff7, #00f5d4);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+}
+.overlay p { color: #aaa; font-size: 1.1em; margin: 5px 0; }
+.score-display {
+  font-size: 2em; color: #00f5d4; margin: 15px 0;
+  text-shadow: 0 0 20px rgba(0,245,212,0.5);
+}
+.hidden { display: none !important; }
+
+#gameArea { padding-top: 60px; width: 100%; text-align: center; }
+.hud {
+  display: flex; gap: 30px; justify-content: center;
+  font-size: 1.1em; color: #00f5d4;
+  text-shadow: 0 0 10px rgba(0,245,212,0.4); margin-bottom: 30px;
+}
+.tubes-container {
+  display: flex; gap: 18px; justify-content: center; align-items: flex-end;
+  flex-wrap: wrap; padding: 0 10px;
+}
+.tube {
+  width: 60px; cursor: pointer; display: flex; flex-direction: column-reverse;
+  align-items: center; border: 2px solid #2a2a4a; border-top: none;
+  border-radius: 0 0 12px 12px; min-height: 200px; padding: 4px;
+  background: rgba(26,26,46,0.5); position: relative;
+  transition: border-color 0.2s, transform 0.15s;
+}
+.tube:hover { border-color: #7b2ff7; }
+.tube.selected { border-color: #00f5d4; transform: translateY(-10px); box-shadow: 0 5px 20px rgba(0,245,212,0.2); }
+.ball {
+  width: 48px; height: 48px; border-radius: 50%; margin: 2px 0;
+  transition: all 0.2s ease; position: relative;
+}
+.ball::after {
+  content: ''; position: absolute; top: 8px; left: 12px;
+  width: 16px; height: 10px; border-radius: 50%;
+  background: rgba(255,255,255,0.3);
+}
+.tube-label { color: #666; font-size: 0.7em; margin-top: 8px; position: absolute; top: -20px; }
+
+.level-info { margin: 20px 0; color: #aaa; font-size: 0.95em; }
+</style>
+</head>
+<body>
+<a id="hubLink" href="/">&#8592; Back to Hub</a>
+
+<div id="gameArea" class="hidden">
+  <div class="hud">
+    <div>Level: <span id="levelText">1</span></div>
+    <div>Moves: <span id="movesText">0</span></div>
+    <div>Score: <span id="scoreText">0</span></div>
+  </div>
+  <div class="tubes-container" id="tubes"></div>
+  <p class="level-info" id="levelInfo">Tap a tube to pick up the top ball, then tap another to place it.</p>
+</div>
+
+<div class="overlay" id="startScreen">
+  <h1>Color Sort</h1>
+  <p>Sort the colored balls into tubes!</p>
+  <p style="color:#666; font-size:0.9em;">Fewer moves = higher score</p>
+  <button class="btn" id="startBtn">Play</button>
+</div>
+
+<div class="overlay hidden" id="gameOverScreen">
+  <h1>Complete!</h1>
+  <div class="score-display" id="finalScore">0</div>
+  <p id="gameOverMsg">Well sorted!</p>
+  <button class="btn" id="restartBtn">Play Again</button>
+</div>
+
+<script src="/shared/game-client.js"></script>
+<script>
+PlayFunClient.init('color-sort', 'GAME_ID_HERE');
+
+const COLORS = [
+  {name:'cyan', bg:'#00f5d4', shadow:'rgba(0,245,212,0.5)'},
+  {name:'purple', bg:'#7b2ff7', shadow:'rgba(123,47,247,0.5)'},
+  {name:'red', bg:'#ff2770', shadow:'rgba(255,39,112,0.5)'},
+  {name:'gold', bg:'#ffd700', shadow:'rgba(255,215,0,0.5)'},
+  {name:'blue', bg:'#4169e1', shadow:'rgba(65,105,225,0.5)'},
+  {name:'green', bg:'#39ff14', shadow:'rgba(57,255,20,0.5)'}
+];
+
+const levels = [
+  { numColors: 3, tubeSize: 4, extraTubes: 1 },
+  { numColors: 3, tubeSize: 4, extraTubes: 1 },
+  { numColors: 4, tubeSize: 4, extraTubes: 1 },
+  { numColors: 4, tubeSize: 4, extraTubes: 2 },
+  { numColors: 5, tubeSize: 4, extraTubes: 2 },
+  { numColors: 5, tubeSize: 4, extraTubes: 1 },
+  { numColors: 6, tubeSize: 4, extraTubes: 2 },
+];
+
+let tubes = [];
+let selectedTube = -1;
+let moves = 0;
+let score = 0;
+let currentLevel = 0;
+
+function generateLevel(lvl) {
+  let cfg = levels[Math.min(lvl, levels.length - 1)];
+  let balls = [];
+  for (let c = 0; c < cfg.numColors; c++) {
+    for (let i = 0; i < cfg.tubeSize; i++) balls.push(c);
+  }
+  // Shuffle
+  for (let i = balls.length - 1; i > 0; i--) {
+    let j = Math.floor(Math.random() * (i + 1));
+    [balls[i], balls[j]] = [balls[j], balls[i]];
+  }
+  tubes = [];
+  let idx = 0;
+  for (let t = 0; t < cfg.numColors; t++) {
+    let tube = [];
+    for (let b = 0; b < cfg.tubeSize; b++) tube.push(balls[idx++]);
+    tubes.push(tube);
+  }
+  for (let t = 0; t < cfg.extraTubes; t++) tubes.push([]);
+}
+
+function renderTubes() {
+  const container = document.getElementById('tubes');
+  container.innerHTML = '';
+  let cfg = levels[Math.min(currentLevel, levels.length - 1)];
+  tubes.forEach((tube, ti) => {
+    let div = document.createElement('div');
+    div.className = 'tube' + (ti === selectedTube ? ' selected' : '');
+    div.style.minHeight = (cfg.tubeSize * 52 + 16) + 'px';
+    div.addEventListener('click', () => onTubeClick(ti));
+    tube.forEach(ballColor => {
+      let ball = document.createElement('div');
+      ball.className = 'ball';
+      let c = COLORS[ballColor];
+      ball.style.background = `radial-gradient(circle at 35% 35%, ${c.bg}, ${c.bg}aa)`;
+      ball.style.boxShadow = `0 0 12px ${c.shadow}, inset 0 -3px 6px rgba(0,0,0,0.3)`;
+      div.appendChild(ball);
+    });
+    container.appendChild(div);
+  });
+}
+
+function onTubeClick(ti) {
+  let cfg = levels[Math.min(currentLevel, levels.length - 1)];
+  if (selectedTube === -1) {
+    if (tubes[ti].length === 0) return;
+    selectedTube = ti;
+  } else if (selectedTube === ti) {
+    selectedTube = -1;
+  } else {
+    let from = tubes[selectedTube];
+    let to = tubes[ti];
+    if (to.length < cfg.tubeSize && from.length > 0) {
+      let ball = from[from.length - 1];
+      if (to.length === 0 || to[to.length - 1] === ball) {
+        // Move all matching top balls
+        while (from.length > 0 && from[from.length - 1] === ball && to.length < cfg.tubeSize) {
+          to.push(from.pop());
+          moves++;
+        }
+      }
+    }
+    selectedTube = -1;
+  }
+  document.getElementById('movesText').textContent = moves;
+  renderTubes();
+  if (checkWin()) levelComplete();
+}
+
+function checkWin() {
+  let cfg = levels[Math.min(currentLevel, levels.length - 1)];
+  return tubes.every(t => t.length === 0 || (t.length === cfg.tubeSize && t.every(b => b === t[0])));
+}
+
+function levelComplete() {
+  let cfg = levels[Math.min(currentLevel, levels.length - 1)];
+  let optimalMoves = cfg.numColors * cfg.tubeSize;
+  let efficiency = Math.max(0.1, optimalMoves / Math.max(moves, 1));
+  let levelScore = Math.floor(500 * efficiency * (currentLevel + 1));
+  score += levelScore;
+  document.getElementById('scoreText').textContent = score;
+  document.getElementById('levelInfo').textContent = `Level complete! +${levelScore} points`;
+
+  currentLevel++;
+  if (currentLevel >= levels.length) {
+    setTimeout(() => endGame(), 800);
+  } else {
+    setTimeout(() => {
+      moves = 0;
+      document.getElementById('movesText').textContent = '0';
+      document.getElementById('levelText').textContent = currentLevel + 1;
+      document.getElementById('levelInfo').textContent = 'Tap a tube to pick up the top ball, then tap another to place it.';
+      generateLevel(currentLevel);
+      renderTubes();
+    }, 1200);
+  }
+}
+
+async function endGame() {
+  document.getElementById('gameArea').classList.add('hidden');
+  document.getElementById('finalScore').textContent = score;
+  let msg = score > 3000 ? 'Sorting master!' : score > 1500 ? 'Well sorted!' : 'Nice try!';
+  document.getElementById('gameOverMsg').textContent = msg;
+  document.getElementById('gameOverScreen').classList.remove('hidden');
+  try { await PlayFunClient.submitScore(score); } catch(e) {}
+}
+
+function startGame() {
+  currentLevel = 0; moves = 0; score = 0; selectedTube = -1;
+  document.getElementById('scoreText').textContent = '0';
+  document.getElementById('movesText').textContent = '0';
+  document.getElementById('levelText').textContent = '1';
+  document.getElementById('levelInfo').textContent = 'Tap a tube to pick up the top ball, then tap another to place it.';
+  document.getElementById('startScreen').classList.add('hidden');
+  document.getElementById('gameOverScreen').classList.add('hidden');
+  document.getElementById('gameArea').classList.remove('hidden');
+  generateLevel(0);
+  renderTubes();
+}
+
+document.getElementById('startBtn').addEventListener('click', startGame);
+document.getElementById('restartBtn').addEventListener('click', startGame);
+</script>
+</body>
+</html>

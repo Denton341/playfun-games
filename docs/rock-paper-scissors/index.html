@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="x-ogp-key" content="fa29b0ef-94e6-4a82-b20f-08336b32c6c8">
+<title>Rock Paper Scissors</title>
+<script src="https://sdk.play.fun"></script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #0a0a1a; color: #fff;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  min-height: 100vh; display: flex; flex-direction: column; align-items: center;
+}
+.btn {
+  padding: 14px 50px; font-size: 1.1em; font-weight: bold; border: none;
+  border-radius: 8px; cursor: pointer;
+  background: linear-gradient(135deg, #7b2ff7, #00f5d4);
+  color: #fff; margin-top: 15px;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+.btn:hover { transform: scale(1.05); box-shadow: 0 0 25px rgba(0,245,212,0.4); }
+#hubLink {
+  position: fixed; top: 15px; right: 20px; z-index: 100;
+  color: #00f5d4; text-decoration: none; font-size: 0.95em;
+  opacity: 0.8; transition: opacity 0.2s;
+}
+#hubLink:hover { opacity: 1; }
+.overlay {
+  position: fixed; inset: 0; background: rgba(10,10,26,0.92);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  z-index: 50; text-align: center;
+}
+.overlay h1 {
+  font-size: 2.8em; margin-bottom: 10px;
+  background: linear-gradient(135deg, #7b2ff7, #00f5d4);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+}
+.overlay p { color: #aaa; font-size: 1.1em; margin: 5px 0; }
+.score-display {
+  font-size: 2em; color: #00f5d4; margin: 15px 0;
+  text-shadow: 0 0 20px rgba(0,245,212,0.5);
+}
+.hidden { display: none !important; }
+
+#gameArea { padding-top: 60px; width: 100%; max-width: 500px; text-align: center; }
+.hud {
+  display: flex; gap: 20px; justify-content: center;
+  font-size: 1em; color: #00f5d4; margin-bottom: 20px;
+  text-shadow: 0 0 10px rgba(0,245,212,0.4); flex-wrap: wrap;
+}
+
+.arena {
+  display: flex; justify-content: space-around; align-items: center;
+  margin: 30px 0; min-height: 160px;
+}
+.hand {
+  font-size: 5em; transition: transform 0.3s;
+  text-shadow: 0 0 30px rgba(0,245,212,0.3);
+}
+.hand.shake {
+  animation: shake 0.4s ease-in-out;
+}
+@keyframes shake {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  25% { transform: translateY(-20px) rotate(-10deg); }
+  50% { transform: translateY(0) rotate(0deg); }
+  75% { transform: translateY(-15px) rotate(10deg); }
+}
+.vs { font-size: 1.5em; color: #7b2ff7; font-weight: bold; }
+
+.choices {
+  display: flex; gap: 15px; justify-content: center; flex-wrap: wrap;
+  margin: 20px 0;
+}
+.choice-btn {
+  width: 100px; height: 100px; border-radius: 16px;
+  background: #1a1a2e; border: 2px solid #2a2a4a;
+  cursor: pointer; font-size: 3em; display: flex;
+  align-items: center; justify-content: center;
+  transition: all 0.2s;
+}
+.choice-btn:hover {
+  border-color: #00f5d4; transform: scale(1.1);
+  box-shadow: 0 0 20px rgba(0,245,212,0.3);
+}
+.choice-btn:active { transform: scale(0.95); }
+.choice-btn.disabled { opacity: 0.4; pointer-events: none; }
+
+.result-text {
+  font-size: 1.8em; font-weight: bold; min-height: 50px;
+  margin: 15px 0; transition: all 0.3s;
+}
+.result-text.win { color: #00f5d4; text-shadow: 0 0 20px rgba(0,245,212,0.5); }
+.result-text.lose { color: #ff2770; text-shadow: 0 0 20px rgba(255,39,112,0.5); }
+.result-text.draw { color: #7b2ff7; text-shadow: 0 0 20px rgba(123,47,247,0.5); }
+
+.streak-bar {
+  margin: 10px auto; padding: 8px 20px; border-radius: 20px;
+  background: rgba(123,47,247,0.2); border: 1px solid #7b2ff7;
+  display: inline-block; font-size: 0.95em;
+}
+.streak-bar .fire { color: #ffd700; }
+
+.scoreboard {
+  display: flex; justify-content: space-around; margin: 15px 0;
+  font-size: 1.1em;
+}
+.scoreboard div { text-align: center; }
+.scoreboard .label { color: #aaa; font-size: 0.8em; }
+.scoreboard .val { font-size: 1.6em; font-weight: bold; }
+.scoreboard .player-score .val { color: #00f5d4; }
+.scoreboard .cpu-score .val { color: #ff2770; }
+</style>
+</head>
+<body>
+<a id="hubLink" href="/">&#8592; Back to Hub</a>
+
+<div id="gameArea" class="hidden">
+  <div class="hud">
+    <div>Round <span id="roundText">1</span>/10</div>
+    <div>Score: <span id="scoreText">0</span></div>
+  </div>
+
+  <div class="scoreboard">
+    <div class="player-score"><div class="label">YOU</div><div class="val" id="playerWins">0</div></div>
+    <div class="cpu-score"><div class="label">CPU</div><div class="val" id="cpuWins">0</div></div>
+  </div>
+
+  <div class="arena">
+    <div class="hand" id="playerHand">❓</div>
+    <div class="vs">VS</div>
+    <div class="hand" id="cpuHand">❓</div>
+  </div>
+
+  <div class="result-text" id="resultText"></div>
+  <div class="streak-bar" id="streakBar">Streak: <span id="streakText">0</span> <span class="fire" id="fireText"></span></div>
+
+  <div class="choices" id="choices">
+    <div class="choice-btn" data-choice="rock">🪨</div>
+    <div class="choice-btn" data-choice="paper">📄</div>
+    <div class="choice-btn" data-choice="scissors">✂️</div>
+  </div>
+</div>
+
+<div class="overlay" id="startScreen">
+  <h1>Rock Paper Scissors</h1>
+  <p>10 rounds against the computer!</p>
+  <p style="color:#666; font-size:0.9em;">Win streaks double your points each time</p>
+  <button class="btn" id="startBtn">Play</button>
+</div>
+
+<div class="overlay hidden" id="gameOverScreen">
+  <h1 id="endTitle">Game Over</h1>
+  <div class="score-display" id="finalScore">0</div>
+  <p id="gameOverMsg">Good game!</p>
+  <button class="btn" id="restartBtn">Play Again</button>
+</div>
+
+<script src="/shared/game-client.js"></script>
+<script>
+PlayFunClient.init('rock-paper-scissors', 'GAME_ID_HERE');
+
+const EMOJIS = { rock: '🪨', paper: '📄', scissors: '✂️' };
+const CHOICES = ['rock', 'paper', 'scissors'];
+const TOTAL_ROUNDS = 10;
+
+let round = 0, score = 0, streak = 0, playerWins = 0, cpuWins = 0;
+let playing = false;
+
+function getResult(player, cpu) {
+  if (player === cpu) return 'draw';
+  if ((player === 'rock' && cpu === 'scissors') ||
+      (player === 'paper' && cpu === 'rock') ||
+      (player === 'scissors' && cpu === 'paper')) return 'win';
+  return 'lose';
+}
+
+function play(playerChoice) {
+  if (!playing) return;
+  playing = false;
+
+  // Disable buttons
+  document.querySelectorAll('.choice-btn').forEach(b => b.classList.add('disabled'));
+
+  // Shake animation
+  const pH = document.getElementById('playerHand');
+  const cH = document.getElementById('cpuHand');
+  pH.textContent = '✊'; cH.textContent = '✊';
+  pH.classList.add('shake'); cH.classList.add('shake');
+
+  setTimeout(() => {
+    pH.classList.remove('shake'); cH.classList.remove('shake');
+
+    let cpuChoice = CHOICES[Math.floor(Math.random() * 3)];
+    pH.textContent = EMOJIS[playerChoice];
+    cH.textContent = EMOJIS[cpuChoice];
+
+    let result = getResult(playerChoice, cpuChoice);
+    let resultEl = document.getElementById('resultText');
+    resultEl.className = 'result-text ' + result;
+
+    if (result === 'win') {
+      streak++;
+      let points = Math.pow(2, Math.min(streak - 1, 6)) * 100;
+      score += points;
+      playerWins++;
+      resultEl.textContent = `You win! +${points}`;
+    } else if (result === 'lose') {
+      streak = 0;
+      cpuWins++;
+      resultEl.textContent = 'You lose!';
+    } else {
+      resultEl.textContent = 'Draw!';
+    }
+
+    document.getElementById('scoreText').textContent = score;
+    document.getElementById('playerWins').textContent = playerWins;
+    document.getElementById('cpuWins').textContent = cpuWins;
+    document.getElementById('streakText').textContent = streak;
+    document.getElementById('fireText').textContent = streak >= 3 ? '🔥'.repeat(Math.min(streak - 2, 5)) : '';
+
+    round++;
+    if (round >= TOTAL_ROUNDS) {
+      setTimeout(() => endGame(), 1200);
+    } else {
+      setTimeout(() => {
+        document.getElementById('roundText').textContent = round + 1;
+        document.querySelectorAll('.choice-btn').forEach(b => b.classList.remove('disabled'));
+        playing = true;
+      }, 1000);
+    }
+  }, 600);
+}
+
+async function endGame() {
+  document.getElementById('gameArea').classList.add('hidden');
+  let won = playerWins > cpuWins;
+  let tied = playerWins === cpuWins;
+  document.getElementById('endTitle').textContent = won ? 'You Win!' : tied ? 'Draw!' : 'You Lose!';
+  document.getElementById('finalScore').textContent = score;
+  document.getElementById('gameOverMsg').textContent =
+    `${playerWins} wins, ${cpuWins} losses, ${TOTAL_ROUNDS - playerWins - cpuWins} draws`;
+  document.getElementById('gameOverScreen').classList.remove('hidden');
+  try { await PlayFunClient.submitScore(score); } catch(e) {}
+}
+
+function startGame() {
+  round = 0; score = 0; streak = 0; playerWins = 0; cpuWins = 0; playing = true;
+  document.getElementById('roundText').textContent = '1';
+  document.getElementById('scoreText').textContent = '0';
+  document.getElementById('playerWins').textContent = '0';
+  document.getElementById('cpuWins').textContent = '0';
+  document.getElementById('streakText').textContent = '0';
+  document.getElementById('fireText').textContent = '';
+  document.getElementById('playerHand').textContent = '❓';
+  document.getElementById('cpuHand').textContent = '❓';
+  document.getElementById('resultText').textContent = '';
+  document.getElementById('resultText').className = 'result-text';
+  document.querySelectorAll('.choice-btn').forEach(b => b.classList.remove('disabled'));
+  document.getElementById('startScreen').classList.add('hidden');
+  document.getElementById('gameOverScreen').classList.add('hidden');
+  document.getElementById('gameArea').classList.remove('hidden');
+}
+
+document.querySelectorAll('.choice-btn').forEach(btn => {
+  btn.addEventListener('click', () => play(btn.dataset.choice));
+});
+
+document.getElementById('startBtn').addEventListener('click', startGame);
+document.getElementById('restartBtn').addEventListener('click', startGame);
+</script>
+</body>
+</html>

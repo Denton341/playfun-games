@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="x-ogp-key" content="fa29b0ef-94e6-4a82-b20f-08336b32c6c8">
+<title>Gravity Runner</title>
+<script src="https://sdk.play.fun"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0a0a1a; overflow: hidden; font-family: 'Segoe UI', system-ui, sans-serif; }
+  canvas { display: block; }
+  #ui { position: absolute; top:0; left:0; width:100%; height:100%; pointer-events: none; z-index:10; }
+  #score-display { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); font-size: 2.5em; color: #00f5d4; font-weight: bold; }
+  .overlay { position:absolute; top:0; left:0; width:100%; height:100%; display:flex; align-items:center; justify-content:center; background:rgba(10,10,26,0.9); pointer-events:all; }
+  .overlay-box { text-align:center; padding:40px; }
+  .overlay-box h1 { color:#00f5d4; font-size:2.5em; }
+  .overlay-box h2 { color:#fff; font-size:2em; }
+  .overlay-box p { color:#888; margin:8px 0; }
+  .big-score { color:#00f5d4; font-size:3em; font-weight:bold; }
+  .btn { padding:14px 50px; font-size:1.1em; font-weight:bold; border:none; border-radius:8px; cursor:pointer; background:linear-gradient(135deg,#7b2ff7,#00f5d4); color:#fff; margin-top:15px; pointer-events:all; }
+  .back-link { position:absolute; top:20px; right:20px; color:#555; text-decoration:none; font-size:14px; pointer-events:all; }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<div id="ui">
+  <div id="score-display">0</div>
+  <a href="/" class="back-link">Back to Hub</a>
+  <div class="overlay" id="start-screen">
+    <div class="overlay-box">
+      <h1>Gravity Runner</h1>
+      <p>Tap/Space to flip gravity. Avoid obstacles on both sides!</p>
+      <button class="btn" onclick="startGame()">RUN</button>
+    </div>
+  </div>
+  <div class="overlay" id="end-screen" style="display:none;">
+    <div class="overlay-box">
+      <h2>Crashed!</h2>
+      <div class="big-score" id="final-score">0</div>
+      <p>Best: <span id="best">0</span></p>
+      <button class="btn" onclick="startGame()">AGAIN</button>
+    </div>
+  </div>
+</div>
+<script src="/shared/game-client.js"></script>
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+let W, H;
+function resize() { W = canvas.width = window.innerWidth; H = canvas.height = window.innerHeight; }
+resize(); window.addEventListener('resize', resize);
+
+let player, obstacles, particles, stars, score, speed, gravityDir, gameRunning, bestScore;
+bestScore = parseInt(localStorage.getItem('gravity-runner-best') || '0');
+
+const GRAVITY = 0.5;
+const CEILING = 60, FLOOR_OFFSET = 60;
+
+function init() {
+  player = { x: 120, y: H / 2, vy: 0, w: 20, h: 20, trail: [] };
+  obstacles = [];
+  particles = [];
+  stars = Array.from({length: 60}, () => ({ x: Math.random()*W, y: Math.random()*H, s: Math.random()*1.5+0.5 }));
+  score = 0; speed = 4; gravityDir = 1;
+}
+
+function startGame() {
+  document.getElementById('start-screen').style.display = 'none';
+  document.getElementById('end-screen').style.display = 'none';
+  init();
+  gameRunning = true;
+  requestAnimationFrame(loop);
+}
+
+function flipGravity() {
+  if (!gameRunning) return;
+  gravityDir *= -1;
+  for (let i = 0; i < 5; i++)
+    particles.push({ x: player.x, y: player.y, vx: (Math.random()-0.5)*4, vy: (Math.random()-0.5)*4, life: 1, color: gravityDir > 0 ? '#00f5d4' : '#7b2ff7' });
+}
+
+window.addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); flipGravity(); } });
+canvas.addEventListener('mousedown', flipGravity);
+canvas.addEventListener('touchstart', e => { e.preventDefault(); flipGravity(); });
+
+let spawnTimer = 0;
+function update() {
+  player.vy += GRAVITY * gravityDir;
+  player.vy *= 0.98;
+  player.y += player.vy;
+
+  // Bounce off ceiling/floor
+  if (player.y < CEILING) { player.y = CEILING; player.vy = 0; }
+  if (player.y + player.h > H - FLOOR_OFFSET) { player.y = H - FLOOR_OFFSET - player.h; player.vy = 0; }
+
+  // Trail
+  player.trail.push({ x: player.x, y: player.y + player.h / 2 });
+  if (player.trail.length > 20) player.trail.shift();
+
+  speed = 4 + score * 0.008;
+
+  // Spawn obstacles
+  spawnTimer += speed;
+  if (spawnTimer > 200) {
+    spawnTimer = 0;
+    const side = Math.random() > 0.5 ? 'top' : 'bottom';
+    const h = 30 + Math.random() * 80;
+    obstacles.push({
+      x: W + 20,
+      y: side === 'top' ? CEILING : H - FLOOR_OFFSET - h,
+      w: 25 + Math.random() * 15,
+      h: h,
+      passed: false
+    });
+  }
+
+  // Update obstacles
+  for (let i = obstacles.length - 1; i >= 0; i--) {
+    const o = obstacles[i];
+    o.x -= speed;
+    if (o.x + o.w < 0) { obstacles.splice(i, 1); continue; }
+
+    if (!o.passed && o.x + o.w < player.x) {
+      o.passed = true;
+      score++;
+      document.getElementById('score-display').textContent = score;
+    }
+
+    // Collision
+    if (player.x + player.w > o.x && player.x < o.x + o.w &&
+        player.y + player.h > o.y && player.y < o.y + o.h) {
+      gameOver();
+      return;
+    }
+  }
+
+  // Stars
+  stars.forEach(s => { s.x -= speed * 0.3; if (s.x < 0) s.x = W; });
+
+  // Particles
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx; p.y += p.vy; p.life -= 0.04;
+    if (p.life <= 0) particles.splice(i, 1);
+  }
+}
+
+function draw() {
+  const grad = ctx.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0, '#0a0a2e');
+  grad.addColorStop(0.5, '#0a0a1a');
+  grad.addColorStop(1, '#1a0a3e');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+
+  // Stars
+  stars.forEach(s => { ctx.fillStyle = `rgba(255,255,255,${s.s*0.2})`; ctx.fillRect(s.x, s.y, s.s, s.s); });
+
+  // Ceiling & floor
+  ctx.fillStyle = '#1a1a3a';
+  ctx.fillRect(0, 0, W, CEILING);
+  ctx.fillRect(0, H - FLOOR_OFFSET, W, FLOOR_OFFSET);
+  ctx.strokeStyle = gravityDir > 0 ? '#00f5d4' : '#7b2ff7';
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(0, CEILING); ctx.lineTo(W, CEILING); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(0, H - FLOOR_OFFSET); ctx.lineTo(W, H - FLOOR_OFFSET); ctx.stroke();
+
+  // Trail
+  player.trail.forEach((t, i) => {
+    const a = i / player.trail.length * 0.3;
+    ctx.fillStyle = `rgba(${gravityDir > 0 ? '0,245,212' : '123,47,247'},${a})`;
+    ctx.fillRect(t.x - 1, t.y - 1, 3, 3);
+  });
+
+  // Player
+  const color = gravityDir > 0 ? '#00f5d4' : '#7b2ff7';
+  ctx.shadowColor = color; ctx.shadowBlur = 12;
+  ctx.fillStyle = color;
+  ctx.fillRect(player.x, player.y, player.w, player.h);
+  ctx.shadowBlur = 0;
+
+  // Obstacles
+  obstacles.forEach(o => {
+    ctx.shadowColor = '#ff2770'; ctx.shadowBlur = 6;
+    ctx.fillStyle = '#ff2770';
+    ctx.fillRect(o.x, o.y, o.w, o.h);
+    ctx.shadowBlur = 0;
+  });
+
+  // Particles
+  particles.forEach(p => {
+    ctx.globalAlpha = p.life;
+    ctx.fillStyle = p.color;
+    ctx.fillRect(p.x, p.y, 3, 3);
+    ctx.globalAlpha = 1;
+  });
+
+  // Gravity indicator
+  ctx.fillStyle = color;
+  ctx.font = 'bold 16px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText(gravityDir > 0 ? 'GRAVITY: DOWN' : 'GRAVITY: UP', 20, 30);
+}
+
+function loop() { if (!gameRunning) return; update(); draw(); requestAnimationFrame(loop); }
+
+async function gameOver() {
+  gameRunning = false;
+  if (score > bestScore) { bestScore = score; localStorage.setItem('gravity-runner-best', bestScore); }
+  document.getElementById('final-score').textContent = score;
+  document.getElementById('best').textContent = bestScore;
+  document.getElementById('end-screen').style.display = 'flex';
+  await PlayFunClient.submitScore(score);
+}
+
+PlayFunClient.init('gravity-runner', 'GAME_ID_HERE');
+</script>
+</body>
+</html>

@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="x-ogp-key" content="fa29b0ef-94e6-4a82-b20f-08336b32c6c8">
+<title>Bounce Ball - Physics Platformer</title>
+<script src="https://sdk.play.fun"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0a0a1a; overflow: hidden; font-family: 'Segoe UI', system-ui, sans-serif; }
+  canvas { display: block; }
+  #ui { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 10; }
+  #score-hud { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); text-align: center; }
+  .score { font-size: 2.5em; color: #00f5d4; font-weight: bold; }
+  .overlay { position: absolute; top:0; left:0; width:100%; height:100%; display:flex; align-items:center; justify-content:center; background:rgba(10,10,26,0.9); pointer-events:all; }
+  .overlay-box { text-align: center; padding: 40px; }
+  .overlay-box h1 { color: #00f5d4; font-size: 2.5em; }
+  .overlay-box h2 { color: #fff; font-size: 2em; }
+  .overlay-box p { color: #888; margin: 8px 0; }
+  .big-score { color: #00f5d4; font-size: 3em; font-weight: bold; }
+  .btn { padding: 14px 50px; font-size: 1.1em; font-weight: bold; border: none; border-radius: 8px; cursor: pointer; background: linear-gradient(135deg, #7b2ff7, #00f5d4); color: #fff; margin-top: 15px; pointer-events: all; }
+  .back-link { position: absolute; top: 20px; right: 20px; color: #555; text-decoration: none; font-size: 14px; pointer-events: all; }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<div id="ui">
+  <div id="score-hud"><div class="score" id="score">0</div></div>
+  <a href="/" class="back-link">Back to Hub</a>
+  <div class="overlay" id="start-screen">
+    <div class="overlay-box">
+      <h1>Bounce Ball</h1>
+      <p>Tap/click to bounce. Land on platforms. Don't fall!</p>
+      <button class="btn" onclick="startGame()">BOUNCE</button>
+    </div>
+  </div>
+  <div class="overlay" id="end-screen" style="display:none;">
+    <div class="overlay-box">
+      <h2>Fell!</h2>
+      <div class="big-score" id="final-score">0</div>
+      <p>Best: <span id="best">0</span></p>
+      <button class="btn" onclick="startGame()">AGAIN</button>
+    </div>
+  </div>
+</div>
+<script src="/shared/game-client.js"></script>
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+let W, H;
+function resize() { W = canvas.width = window.innerWidth; H = canvas.height = window.innerHeight; }
+resize(); window.addEventListener('resize', resize);
+
+let ball, platforms, score, cameraY, gameRunning, bestScore;
+bestScore = parseInt(localStorage.getItem('bounce-ball-best') || '0');
+const GRAVITY = 0.35, BOUNCE = -10, PLATFORM_GAP = 90;
+
+function init() {
+  ball = { x: W/2, y: H - 200, vy: 0, r: 12 };
+  platforms = [];
+  score = 0; cameraY = 0;
+
+  // Generate initial platforms
+  for (let i = 0; i < 20; i++) {
+    platforms.push({
+      x: Math.random() * (W - 100) + 20,
+      y: H - 100 - i * PLATFORM_GAP,
+      w: 60 + Math.random() * 40,
+      type: i === 0 ? 'normal' : (Math.random() < 0.15 ? 'moving' : 'normal'),
+      dir: 1, speed: 1 + Math.random()
+    });
+  }
+}
+
+function startGame() {
+  document.getElementById('start-screen').style.display = 'none';
+  document.getElementById('end-screen').style.display = 'none';
+  init();
+  gameRunning = true;
+  requestAnimationFrame(loop);
+}
+
+function bounce() { if (gameRunning) ball.vy = BOUNCE; }
+window.addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); bounce(); } });
+canvas.addEventListener('mousedown', bounce);
+canvas.addEventListener('touchstart', e => { e.preventDefault(); bounce(); });
+
+let keys = {};
+window.addEventListener('keydown', e => keys[e.key] = true);
+window.addEventListener('keyup', e => keys[e.key] = false);
+
+function update() {
+  // Horizontal movement
+  if (keys['ArrowLeft'] || keys['a']) ball.x -= 5;
+  if (keys['ArrowRight'] || keys['d']) ball.x += 5;
+
+  // Wrap around
+  if (ball.x < -ball.r) ball.x = W + ball.r;
+  if (ball.x > W + ball.r) ball.x = -ball.r;
+
+  ball.vy += GRAVITY;
+  ball.y += ball.vy;
+
+  // Camera follows ball upward
+  const targetCam = ball.y - H * 0.4;
+  if (targetCam < cameraY) cameraY += (targetCam - cameraY) * 0.1;
+
+  // Platform collision (only when falling)
+  if (ball.vy > 0) {
+    for (const p of platforms) {
+      if (ball.x > p.x - 5 && ball.x < p.x + p.w + 5 &&
+          ball.y + ball.r > p.y && ball.y + ball.r < p.y + 15) {
+        ball.vy = BOUNCE;
+        score++;
+        document.getElementById('score').textContent = score;
+        break;
+      }
+    }
+  }
+
+  // Moving platforms
+  platforms.forEach(p => {
+    if (p.type === 'moving') {
+      p.x += p.speed * p.dir;
+      if (p.x <= 0 || p.x + p.w >= W) p.dir *= -1;
+    }
+  });
+
+  // Generate new platforms above
+  const highest = Math.min(...platforms.map(p => p.y));
+  if (highest > cameraY - H) {
+    platforms.push({
+      x: Math.random() * (W - 100) + 20,
+      y: highest - PLATFORM_GAP,
+      w: 50 + Math.random() * 40,
+      type: Math.random() < 0.2 ? 'moving' : 'normal',
+      dir: 1, speed: 1 + Math.random()
+    });
+  }
+
+  // Remove platforms below
+  platforms = platforms.filter(p => p.y < cameraY + H + 100);
+
+  // Death
+  if (ball.y > cameraY + H + 50) gameOver();
+}
+
+function draw() {
+  ctx.fillStyle = '#0a0a1a';
+  ctx.fillRect(0, 0, W, H);
+
+  const offsetY = -cameraY;
+
+  // Platforms
+  platforms.forEach(p => {
+    const sy = p.y + offsetY;
+    if (sy < -20 || sy > H + 20) return;
+    const color = p.type === 'moving' ? '#f5d400' : '#7b2ff7';
+    ctx.shadowColor = color; ctx.shadowBlur = 8;
+    ctx.fillStyle = color;
+    ctx.fillRect(p.x, sy, p.w, 8);
+    ctx.shadowBlur = 0;
+  });
+
+  // Ball
+  const by = ball.y + offsetY;
+  ctx.shadowColor = '#00f5d4'; ctx.shadowBlur = 15;
+  ctx.fillStyle = '#00f5d4';
+  ctx.beginPath(); ctx.arc(ball.x, by, ball.r, 0, Math.PI * 2); ctx.fill();
+  ctx.shadowBlur = 0;
+
+  // Trail
+  ctx.fillStyle = 'rgba(0,245,212,0.1)';
+  ctx.beginPath(); ctx.arc(ball.x, by + 5, ball.r * 0.8, 0, Math.PI * 2); ctx.fill();
+}
+
+function loop() { if (!gameRunning) return; update(); draw(); requestAnimationFrame(loop); }
+
+async function gameOver() {
+  gameRunning = false;
+  if (score > bestScore) { bestScore = score; localStorage.setItem('bounce-ball-best', bestScore); }
+  document.getElementById('final-score').textContent = score;
+  document.getElementById('best').textContent = bestScore;
+  document.getElementById('end-screen').style.display = 'flex';
+  await PlayFunClient.submitScore(score);
+}
+
+PlayFunClient.init('bounce-ball', 'GAME_ID_HERE');
+</script>
+</body>
+</html>

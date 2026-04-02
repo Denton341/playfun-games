@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="x-ogp-key" content="fa29b0ef-94e6-4a82-b20f-08336b32c6c8">
+<title>Lights Out - Play.fun</title>
+<script src="https://sdk.play.fun"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a1a; color: #fff;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    overflow: auto; min-height: 100vh;
+    display: flex; align-items: center; justify-content: center;
+    flex-direction: column;
+  }
+  #hub-link {
+    position: fixed; top: 16px; right: 20px;
+    color: #00f5d4; text-decoration: none; font-size: 0.95em;
+    z-index: 100; opacity: 0.8; transition: opacity 0.2s;
+  }
+  #hub-link:hover { opacity: 1; }
+  .overlay {
+    position: fixed; inset: 0;
+    background: rgba(10,10,26,0.92);
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    z-index: 50; backdrop-filter: blur(6px);
+  }
+  .overlay.hidden { display: none; }
+  .overlay h1 {
+    font-size: 2.8em; margin-bottom: 10px;
+    background: linear-gradient(135deg, #7b2ff7, #00f5d4);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .overlay p { color: #aaa; margin-bottom: 8px; font-size: 1.1em; }
+  .overlay .score-display { font-size: 2em; color: #00f5d4; margin: 10px 0; }
+  .btn {
+    padding: 14px 50px; font-size: 1.1em; font-weight: bold;
+    border: none; border-radius: 8px; cursor: pointer;
+    background: linear-gradient(135deg, #7b2ff7, #00f5d4);
+    color: #fff; margin-top: 15px;
+    transition: transform 0.15s, box-shadow 0.15s;
+  }
+  .btn:hover { transform: scale(1.05); box-shadow: 0 0 20px rgba(0,245,212,0.4); }
+  #game-area {
+    display: none; flex-direction: column; align-items: center; gap: 20px;
+  }
+  #game-area.active { display: flex; }
+  #top-bar {
+    display: flex; gap: 30px; font-size: 1.1em;
+  }
+  #top-bar .val { color: #00f5d4; font-weight: bold; }
+  #grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 6px;
+  }
+  .cell {
+    width: 60px; height: 60px;
+    border-radius: 10px; cursor: pointer;
+    transition: all 0.2s ease;
+    border: 2px solid transparent;
+  }
+  .cell.on {
+    background: linear-gradient(135deg, #00f5d4, #7b2ff7);
+    box-shadow: 0 0 20px rgba(0,245,212,0.5), 0 0 40px rgba(123,47,247,0.2);
+    border-color: rgba(0,245,212,0.3);
+  }
+  .cell.off {
+    background: #111133;
+    box-shadow: inset 0 2px 8px rgba(0,0,0,0.5);
+    border-color: #222255;
+  }
+  .cell:hover { transform: scale(1.08); }
+  .cell:active { transform: scale(0.95); }
+  #level-msg {
+    font-size: 1.3em; color: #00f5d4;
+    text-shadow: 0 0 15px rgba(0,245,212,0.4);
+    min-height: 30px;
+    opacity: 0; transition: opacity 0.5s;
+  }
+  #level-msg.show { opacity: 1; }
+  .win-cell {
+    animation: winPulse 0.5s ease-in-out;
+  }
+  @keyframes winPulse {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.15); box-shadow: 0 0 30px rgba(0,245,212,0.7); }
+    100% { transform: scale(1); }
+  }
+</style>
+</head>
+<body>
+<a id="hub-link" href="/">&#8592; Back to Hub</a>
+
+<div id="game-area">
+  <div id="top-bar">
+    <div>Level: <span class="val" id="hud-level">1</span></div>
+    <div>Moves: <span class="val" id="hud-moves">0</span></div>
+    <div>Score: <span class="val" id="hud-score">0</span></div>
+  </div>
+  <div id="level-msg"></div>
+  <div id="grid"></div>
+</div>
+
+<div class="overlay" id="start-screen">
+  <h1>Lights Out</h1>
+  <p>Turn off all the lights!</p>
+  <p style="color:#666;font-size:0.9em;">Clicking a cell toggles it and its neighbors</p>
+  <button class="btn" id="start-btn">Play</button>
+</div>
+
+<div class="overlay hidden" id="game-over-screen">
+  <h1>All Levels Complete!</h1>
+  <div class="score-display" id="final-score">0</div>
+  <p id="final-msg"></p>
+  <button class="btn" id="restart-btn">Play Again</button>
+</div>
+
+<script src="/shared/game-client.js"></script>
+<script>
+PlayFunClient.init('lights-out', 'GAME_ID_HERE');
+
+const SIZE = 5;
+const MAX_LEVELS = 10;
+let board, moves, level, score, totalMoves, gameActive;
+const gridEl = document.getElementById('grid');
+const levelMsg = document.getElementById('level-msg');
+
+function initBoard() {
+  // Generate solvable puzzle by performing random clicks on an all-off board
+  board = Array.from({ length: SIZE }, () => Array(SIZE).fill(false));
+  const numClicks = level + 3; // more clicks = harder
+  for (let i = 0; i < numClicks; i++) {
+    const r = Math.floor(Math.random() * SIZE);
+    const c = Math.floor(Math.random() * SIZE);
+    toggleAt(r, c, true); // silent toggle
+  }
+  // Make sure at least some lights are on
+  if (board.every(row => row.every(c => !c))) {
+    toggleAt(2, 2, true);
+    toggleAt(1, 1, true);
+    toggleAt(3, 3, true);
+  }
+}
+
+function toggleAt(r, c, silent) {
+  const flip = [[r, c], [r-1, c], [r+1, c], [r, c-1], [r, c+1]];
+  flip.forEach(([nr, nc]) => {
+    if (nr >= 0 && nr < SIZE && nc >= 0 && nc < SIZE) {
+      board[nr][nc] = !board[nr][nc];
+    }
+  });
+  if (!silent) renderGrid();
+}
+
+function renderGrid() {
+  const cells = gridEl.querySelectorAll('.cell');
+  for (let r = 0; r < SIZE; r++) {
+    for (let c = 0; c < SIZE; c++) {
+      const el = cells[r * SIZE + c];
+      el.className = 'cell ' + (board[r][c] ? 'on' : 'off');
+    }
+  }
+}
+
+function buildGrid() {
+  gridEl.innerHTML = '';
+  for (let r = 0; r < SIZE; r++) {
+    for (let c = 0; c < SIZE; c++) {
+      const el = document.createElement('div');
+      el.className = 'cell off';
+      el.addEventListener('click', () => handleClick(r, c));
+      gridEl.appendChild(el);
+    }
+  }
+}
+
+function isWin() {
+  return board.every(row => row.every(c => !c));
+}
+
+function handleClick(r, c) {
+  if (!gameActive) return;
+  moves++;
+  totalMoves++;
+  document.getElementById('hud-moves').textContent = moves;
+  toggleAt(r, c, false);
+
+  if (isWin()) {
+    gameActive = false;
+    // Score: base per level + efficiency bonus
+    const parMoves = level + 3; // roughly minimum needed
+    const efficiency = Math.max(0, 100 - (moves - parMoves) * 5);
+    const levelScore = (level * 50) + efficiency;
+    score += levelScore;
+    document.getElementById('hud-score').textContent = score;
+
+    // win animation
+    const cells = gridEl.querySelectorAll('.cell');
+    cells.forEach((el, i) => {
+      setTimeout(() => el.classList.add('win-cell'), i * 40);
+    });
+
+    if (level >= MAX_LEVELS) {
+      setTimeout(() => endGame(), 1200);
+    } else {
+      levelMsg.textContent = `Level ${level} cleared! +${levelScore}`;
+      levelMsg.classList.add('show');
+      setTimeout(() => {
+        levelMsg.classList.remove('show');
+        nextLevel();
+      }, 1500);
+    }
+  }
+}
+
+function nextLevel() {
+  level++;
+  moves = 0;
+  document.getElementById('hud-level').textContent = level;
+  document.getElementById('hud-moves').textContent = '0';
+  initBoard();
+  renderGrid();
+  gameActive = true;
+}
+
+function startGame() {
+  document.getElementById('start-screen').classList.add('hidden');
+  document.getElementById('game-over-screen').classList.add('hidden');
+  document.getElementById('game-area').classList.add('active');
+  level = 1; moves = 0; score = 0; totalMoves = 0;
+  document.getElementById('hud-level').textContent = '1';
+  document.getElementById('hud-moves').textContent = '0';
+  document.getElementById('hud-score').textContent = '0';
+  buildGrid();
+  initBoard();
+  renderGrid();
+  gameActive = true;
+}
+
+async function endGame() {
+  gameActive = false;
+  document.getElementById('game-area').classList.remove('active');
+  document.getElementById('final-score').textContent = score;
+  document.getElementById('final-msg').textContent = totalMoves < 50 ? 'Puzzle master!' : totalMoves < 80 ? 'Well done!' : 'Good effort!';
+  document.getElementById('game-over-screen').classList.remove('hidden');
+  try { await PlayFunClient.submitScore(score); } catch(e) { console.warn(e); }
+}
+
+document.getElementById('start-btn').addEventListener('click', startGame);
+document.getElementById('restart-btn').addEventListener('click', startGame);
+</script>
+</body>
+</html>

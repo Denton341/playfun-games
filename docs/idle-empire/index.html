@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="x-ogp-key" content="fa29b0ef-94e6-4a82-b20f-08336b32c6c8">
+<title>Idle Empire - Clicker</title>
+<script src="https://sdk.play.fun"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0a0a1a; color: #fff; font-family: 'Segoe UI', system-ui, sans-serif; min-height: 100vh; }
+  .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+  h1 { text-align: center; color: #00f5d4; font-size: 1.8em; margin-bottom: 5px; }
+  .subtitle { text-align: center; color: #888; margin-bottom: 20px; font-size: 0.9em; }
+  #coins-display {
+    text-align: center; font-size: 3em; font-weight: bold; margin: 10px 0;
+    background: linear-gradient(135deg, #f5d400, #ff6b35);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  #per-sec { text-align: center; color: #888; margin-bottom: 20px; }
+  #click-area {
+    width: 200px; height: 200px; margin: 20px auto; border-radius: 50%;
+    background: radial-gradient(circle at 40% 40%, #f5d400, #ff6b35);
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; transition: transform 0.05s; user-select: none;
+    box-shadow: 0 0 40px rgba(245,212,0,0.3);
+    -webkit-tap-highlight-color: transparent; position: relative;
+  }
+  #click-area:active { transform: scale(0.92); }
+  #click-area .icon { font-size: 4em; pointer-events: none; }
+  .float-text {
+    position: absolute; color: #f5d400; font-weight: bold; font-size: 1.2em;
+    animation: floatUp 0.8s ease-out forwards; pointer-events: none;
+  }
+  @keyframes floatUp { 0% { opacity: 1; transform: translateY(0); } 100% { opacity: 0; transform: translateY(-60px); } }
+  .upgrades { margin-top: 30px; }
+  .upgrades h2 { color: #888; font-size: 1em; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px; }
+  .upgrade-card {
+    background: #14141f; border: 1px solid #2a2a4a; border-radius: 12px;
+    padding: 16px; margin-bottom: 10px; display: flex; justify-content: space-between;
+    align-items: center; transition: border-color 0.2s;
+  }
+  .upgrade-card:hover { border-color: #7b2ff7; }
+  .upgrade-card.locked { opacity: 0.4; }
+  .upgrade-info h3 { font-size: 1.1em; }
+  .upgrade-info p { color: #888; font-size: 0.85em; margin-top: 2px; }
+  .upgrade-info .owned { color: #7b2ff7; font-size: 0.8em; }
+  .buy-btn {
+    padding: 8px 20px; font-size: 0.95em; font-weight: bold; border: none; border-radius: 8px;
+    cursor: pointer; background: linear-gradient(135deg, #7b2ff7, #00f5d4); color: #fff;
+    white-space: nowrap;
+  }
+  .buy-btn:disabled { background: #2a2a4a; cursor: not-allowed; }
+  .stats { margin-top: 20px; padding: 15px; background: #14141f; border-radius: 12px; }
+  .stats h2 { color: #888; font-size: 0.9em; text-transform: uppercase; margin-bottom: 8px; }
+  .stat-row { display: flex; justify-content: space-between; color: #555; font-size: 0.85em; margin: 4px 0; }
+  .stat-row .val { color: #00f5d4; }
+  .back-link { position: fixed; top: 20px; right: 20px; color: #555; text-decoration: none; font-size: 14px; z-index: 20; }
+  .back-link:hover { color: #00f5d4; }
+  #submit-btn {
+    display: block; margin: 20px auto; padding: 12px 40px; font-size: 1em; font-weight: bold;
+    border: none; border-radius: 8px; cursor: pointer;
+    background: linear-gradient(135deg, #00f5d4, #7b2ff7); color: #fff;
+  }
+</style>
+</head>
+<body>
+<a href="/" class="back-link">Back to Hub</a>
+<div class="container">
+  <h1>Idle Empire</h1>
+  <div class="subtitle">Click. Upgrade. Earn.</div>
+  <div id="coins-display">0</div>
+  <div id="per-sec">0 coins/sec | +1 per click</div>
+  <div id="click-area"><div class="icon">&#x1FA99;</div></div>
+  <button id="submit-btn" onclick="submitScore()">Save Score to Play.fun</button>
+  <div class="upgrades">
+    <h2>Upgrades</h2>
+    <div id="upgrade-list"></div>
+  </div>
+  <div class="stats">
+    <h2>Stats</h2>
+    <div class="stat-row"><span>Total Clicks</span><span class="val" id="stat-clicks">0</span></div>
+    <div class="stat-row"><span>Total Earned</span><span class="val" id="stat-earned">0</span></div>
+    <div class="stat-row"><span>Time Played</span><span class="val" id="stat-time">0s</span></div>
+  </div>
+</div>
+<script src="/shared/game-client.js"></script>
+<script>
+const UPGRADES = [
+  { id: 'cursor', name: 'Auto Cursor', desc: '+1 coin/sec', baseCost: 15, cps: 1 },
+  { id: 'miner', name: 'Coin Miner', desc: '+5 coins/sec', baseCost: 100, cps: 5 },
+  { id: 'factory', name: 'Coin Factory', desc: '+20 coins/sec', baseCost: 500, cps: 20 },
+  { id: 'bank', name: 'Coin Bank', desc: '+100 coins/sec', baseCost: 3000, cps: 100 },
+  { id: 'portal', name: 'Money Portal', desc: '+500 coins/sec', baseCost: 15000, cps: 500 },
+  { id: 'alchemy', name: 'Alchemy Lab', desc: '+2000 coins/sec', baseCost: 80000, cps: 2000 },
+];
+
+let coins = 0, totalEarned = 0, totalClicks = 0, cps = 0, clickPower = 1;
+let owned = {};
+let startTime = Date.now();
+
+UPGRADES.forEach(u => owned[u.id] = 0);
+
+// Load save
+const save = localStorage.getItem('idle-empire-save');
+if (save) {
+  try {
+    const s = JSON.parse(save);
+    coins = s.coins || 0; totalEarned = s.totalEarned || 0; totalClicks = s.totalClicks || 0;
+    owned = s.owned || owned; startTime = s.startTime || startTime;
+  } catch(e) {}
+}
+
+function getCost(upgrade) {
+  return Math.floor(upgrade.baseCost * Math.pow(1.15, owned[upgrade.id]));
+}
+
+function recalcCPS() {
+  cps = 0;
+  UPGRADES.forEach(u => cps += u.cps * owned[u.id]);
+  clickPower = 1 + Math.floor(cps * 0.05);
+}
+
+function formatNum(n) {
+  if (n >= 1e9) return (n / 1e9).toFixed(1) + 'B';
+  if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
+  if (n >= 1e3) return (n / 1e3).toFixed(1) + 'K';
+  return Math.floor(n).toString();
+}
+
+function renderUpgrades() {
+  const list = document.getElementById('upgrade-list');
+  list.innerHTML = '';
+  UPGRADES.forEach(u => {
+    const cost = getCost(u);
+    const canBuy = coins >= cost;
+    const div = document.createElement('div');
+    div.className = 'upgrade-card' + (canBuy ? '' : ' locked');
+    div.innerHTML = `
+      <div class="upgrade-info">
+        <h3>${u.name}</h3>
+        <p>${u.desc}</p>
+        <div class="owned">Owned: ${owned[u.id]}</div>
+      </div>
+      <button class="buy-btn" ${canBuy ? '' : 'disabled'} onclick="buyUpgrade('${u.id}')">${formatNum(cost)}</button>
+    `;
+    list.appendChild(div);
+  });
+}
+
+function buyUpgrade(id) {
+  const u = UPGRADES.find(u => u.id === id);
+  const cost = getCost(u);
+  if (coins < cost) return;
+  coins -= cost;
+  owned[id]++;
+  recalcCPS();
+  updateDisplay();
+  renderUpgrades();
+  saveGame();
+}
+
+function updateDisplay() {
+  document.getElementById('coins-display').textContent = formatNum(coins);
+  document.getElementById('per-sec').textContent = `${formatNum(cps)} coins/sec | +${formatNum(clickPower)} per click`;
+  document.getElementById('stat-clicks').textContent = formatNum(totalClicks);
+  document.getElementById('stat-earned').textContent = formatNum(totalEarned);
+  const elapsed = Math.floor((Date.now() - startTime) / 1000);
+  const mins = Math.floor(elapsed / 60);
+  const hrs = Math.floor(mins / 60);
+  document.getElementById('stat-time').textContent = hrs > 0 ? `${hrs}h ${mins % 60}m` : `${mins}m ${elapsed % 60}s`;
+}
+
+// Click handler
+const clickArea = document.getElementById('click-area');
+clickArea.addEventListener('mousedown', handleClick);
+clickArea.addEventListener('touchstart', e => { e.preventDefault(); handleClick(e); });
+
+function handleClick(e) {
+  coins += clickPower;
+  totalEarned += clickPower;
+  totalClicks++;
+
+  // Float text
+  const ft = document.createElement('div');
+  ft.className = 'float-text';
+  ft.textContent = '+' + formatNum(clickPower);
+  ft.style.left = (60 + Math.random() * 80) + 'px';
+  ft.style.top = (60 + Math.random() * 40) + 'px';
+  clickArea.appendChild(ft);
+  setTimeout(() => ft.remove(), 800);
+
+  updateDisplay();
+  renderUpgrades();
+}
+
+// Idle income
+setInterval(() => {
+  if (cps > 0) {
+    coins += cps / 10; // 10 ticks per second
+    totalEarned += cps / 10;
+    updateDisplay();
+    renderUpgrades();
+  }
+}, 100);
+
+// Save every 10 seconds
+function saveGame() {
+  localStorage.setItem('idle-empire-save', JSON.stringify({
+    coins, totalEarned, totalClicks, owned, startTime
+  }));
+}
+setInterval(saveGame, 10000);
+
+async function submitScore() {
+  const result = await PlayFunClient.submitScore(Math.floor(totalEarned));
+  if (result.success) {
+    document.getElementById('submit-btn').textContent = 'Score Saved!';
+    setTimeout(() => { document.getElementById('submit-btn').textContent = 'Save Score to Play.fun'; }, 2000);
+  }
+}
+
+recalcCPS();
+updateDisplay();
+renderUpgrades();
+PlayFunClient.init('idle-empire', 'GAME_ID_HERE');
+</script>
+</body>
+</html>

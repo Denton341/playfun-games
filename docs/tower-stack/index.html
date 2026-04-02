@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="x-ogp-key" content="fa29b0ef-94e6-4a82-b20f-08336b32c6c8">
+<title>Tower Stack</title>
+<script src="https://sdk.play.fun"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0a0a1a; overflow: hidden; font-family: 'Segoe UI', system-ui, sans-serif; }
+  canvas { display: block; }
+  #ui { position: absolute; top:0; left:0; width:100%; height:100%; pointer-events:none; z-index:10; }
+  #score-hud { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); }
+  .score { font-size: 4em; color: #00f5d4; font-weight: bold; text-shadow: 0 0 20px rgba(0,245,212,0.3); }
+  .combo { font-size: 1.5em; color: #f5d400; text-align: center; min-height: 30px; }
+  .overlay { position:absolute; top:0; left:0; width:100%; height:100%; display:flex; align-items:center; justify-content:center; background:rgba(10,10,26,0.9); pointer-events:all; }
+  .overlay-box { text-align: center; padding: 40px; }
+  .overlay-box h1 { color: #00f5d4; font-size: 2.5em; }
+  .overlay-box h2 { color: #fff; font-size: 2em; }
+  .overlay-box p { color: #888; margin: 8px 0; }
+  .big-score { color: #00f5d4; font-size: 3em; font-weight: bold; }
+  .btn { padding: 14px 50px; font-size: 1.1em; font-weight: bold; border: none; border-radius: 8px; cursor: pointer; background: linear-gradient(135deg, #7b2ff7, #00f5d4); color: #fff; margin-top: 15px; pointer-events: all; }
+  .back-link { position: absolute; top: 20px; right: 20px; color: #555; text-decoration: none; font-size: 14px; pointer-events: all; }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<div id="ui">
+  <div id="score-hud">
+    <div class="score" id="score">0</div>
+    <div class="combo" id="combo"></div>
+  </div>
+  <a href="/" class="back-link">Back to Hub</a>
+  <div class="overlay" id="start-screen">
+    <div class="overlay-box">
+      <h1>Tower Stack</h1>
+      <p>Tap to drop the block. Stack perfectly for combos!</p>
+      <button class="btn" onclick="startGame()">STACK</button>
+    </div>
+  </div>
+  <div class="overlay" id="end-screen" style="display:none;">
+    <div class="overlay-box">
+      <h2>Tower Fell!</h2>
+      <div class="big-score" id="final-score">0</div>
+      <p>Best: <span id="best">0</span></p>
+      <button class="btn" onclick="startGame()">AGAIN</button>
+    </div>
+  </div>
+</div>
+<script src="/shared/game-client.js"></script>
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+let W, H;
+function resize() { W = canvas.width = window.innerWidth; H = canvas.height = window.innerHeight; }
+resize(); window.addEventListener('resize', resize);
+
+let stack, moving, score, speed, combo, cameraY, gameRunning, bestScore;
+bestScore = parseInt(localStorage.getItem('tower-stack-best') || '0');
+const BLOCK_H = 25;
+
+function hsl(h, s, l) { return `hsl(${h}, ${s}%, ${l}%)`; }
+
+function startGame() {
+  document.getElementById('start-screen').style.display = 'none';
+  document.getElementById('end-screen').style.display = 'none';
+  const baseW = 200;
+  stack = [{ x: W/2 - baseW/2, w: baseW, y: H - BLOCK_H - 50 }];
+  moving = { x: 0, w: baseW, y: stack[0].y - BLOCK_H, dir: 1 };
+  score = 0; speed = 2; combo = 0; cameraY = 0;
+  gameRunning = true;
+  document.getElementById('score').textContent = '0';
+  document.getElementById('combo').textContent = '';
+  requestAnimationFrame(loop);
+}
+
+function drop() {
+  if (!gameRunning) return;
+  const top = stack[stack.length - 1];
+  const overlap = Math.min(moving.x + moving.w, top.x + top.w) - Math.max(moving.x, top.x);
+
+  if (overlap <= 0) {
+    gameOver();
+    return;
+  }
+
+  const perfectThreshold = 5;
+  let newX = Math.max(moving.x, top.x);
+  let newW = overlap;
+
+  if (Math.abs(moving.x - top.x) < perfectThreshold && Math.abs(moving.w - top.w) < perfectThreshold) {
+    // Perfect stack!
+    newX = top.x; newW = top.w;
+    combo++;
+    document.getElementById('combo').textContent = combo >= 2 ? `PERFECT x${combo}!` : 'PERFECT!';
+  } else {
+    combo = 0;
+    document.getElementById('combo').textContent = '';
+  }
+
+  stack.push({ x: newX, w: newW, y: moving.y });
+  score++;
+  speed = 2 + score * 0.1;
+  document.getElementById('score').textContent = score;
+
+  // Next moving block
+  moving = {
+    x: Math.random() > 0.5 ? -newW : W,
+    w: newW,
+    y: moving.y - BLOCK_H,
+    dir: Math.random() > 0.5 ? 1 : -1
+  };
+}
+
+window.addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); drop(); } });
+canvas.addEventListener('mousedown', drop);
+canvas.addEventListener('touchstart', e => { e.preventDefault(); drop(); });
+
+function update() {
+  moving.x += speed * moving.dir;
+  if (moving.x + moving.w > W) moving.dir = -1;
+  if (moving.x < 0) moving.dir = 1;
+
+  // Camera up
+  const targetCam = Math.max(0, (stack.length - 10) * BLOCK_H);
+  cameraY += (targetCam - cameraY) * 0.05;
+}
+
+function draw() {
+  // Background gradient
+  const grad = ctx.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0, '#0a0a2e');
+  grad.addColorStop(1, '#1a0a3e');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+
+  const oY = cameraY;
+
+  // Stack
+  stack.forEach((block, i) => {
+    const hue = (i * 12) % 360;
+    ctx.fillStyle = hsl(hue, 70, 50);
+    ctx.shadowColor = hsl(hue, 70, 50);
+    ctx.shadowBlur = 5;
+    ctx.fillRect(block.x, block.y + oY, block.w, BLOCK_H - 2);
+    ctx.shadowBlur = 0;
+  });
+
+  // Moving block
+  if (gameRunning) {
+    const hue = (stack.length * 12) % 360;
+    ctx.fillStyle = hsl(hue, 80, 60);
+    ctx.shadowColor = hsl(hue, 80, 60);
+    ctx.shadowBlur = 10;
+    ctx.fillRect(moving.x, moving.y + oY, moving.w, BLOCK_H - 2);
+    ctx.shadowBlur = 0;
+  }
+}
+
+function loop() {
+  if (!gameRunning) return;
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+
+async function gameOver() {
+  gameRunning = false;
+  if (score > bestScore) { bestScore = score; localStorage.setItem('tower-stack-best', bestScore); }
+  document.getElementById('final-score').textContent = score;
+  document.getElementById('best').textContent = bestScore;
+  document.getElementById('end-screen').style.display = 'flex';
+  await PlayFunClient.submitScore(score);
+}
+
+PlayFunClient.init('tower-stack', 'GAME_ID_HERE');
+</script>
+</body>
+</html>

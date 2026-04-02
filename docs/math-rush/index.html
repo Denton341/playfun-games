@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="x-ogp-key" content="fa29b0ef-94e6-4a82-b20f-08336b32c6c8">
+<title>Math Rush - Speed Math</title>
+<script src="https://sdk.play.fun"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0a0a1a; color: #fff; font-family: 'Segoe UI', system-ui, sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+  .container { text-align: center; max-width: 450px; width: 100%; padding: 20px; }
+  #hud { display: flex; justify-content: space-between; margin-bottom: 15px; }
+  .hud-item .label { color: #888; font-size: 12px; text-transform: uppercase; }
+  .hud-item .value { color: #00f5d4; font-size: 1.8em; font-weight: bold; }
+  #timer-bar { width: 100%; height: 8px; background: #1a1a2a; border-radius: 4px; margin-bottom: 30px; overflow: hidden; }
+  #timer-fill { height: 100%; background: linear-gradient(90deg, #ff2770, #f5d400, #00f5d4); width: 100%; transition: width 0.1s; }
+  #problem { font-size: 4em; font-weight: bold; margin: 20px 0; color: #fff; min-height: 80px; }
+  #answers { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 20px; }
+  .answer-btn {
+    padding: 20px; font-size: 1.5em; font-weight: bold; border: 2px solid #2a2a4a;
+    border-radius: 12px; background: #14141f; color: #fff; cursor: pointer; transition: all 0.2s;
+  }
+  .answer-btn:hover { border-color: #7b2ff7; }
+  .answer-btn.correct { background: #00f5d4; border-color: #00f5d4; color: #0a0a1a; }
+  .answer-btn.wrong { background: #ff2770; border-color: #ff2770; }
+  #streak { color: #f5d400; font-size: 1.2em; margin-top: 15px; min-height: 30px; }
+  .overlay { position: fixed; top:0; left:0; width:100%; height:100%; background:rgba(10,10,26,0.95); display:flex; align-items:center; justify-content:center; z-index:10; }
+  .overlay-box { text-align: center; padding: 40px; }
+  .overlay-box h1 { color: #00f5d4; font-size: 2.5em; }
+  .overlay-box h2 { font-size: 2em; }
+  .overlay-box p { color: #888; margin: 8px 0; }
+  .big-score { color: #00f5d4; font-size: 3em; font-weight: bold; }
+  .btn { padding: 14px 50px; font-size: 1.1em; font-weight: bold; border: none; border-radius: 8px; cursor: pointer; background: linear-gradient(135deg, #7b2ff7, #00f5d4); color: #fff; margin-top: 15px; }
+  .back-link { position: fixed; top: 20px; right: 20px; color: #555; text-decoration: none; font-size: 14px; z-index: 20; }
+</style>
+</head>
+<body>
+<a href="/" class="back-link">Back to Hub</a>
+<div class="container" id="game-screen" style="display:none;">
+  <div id="hud">
+    <div class="hud-item"><div class="label">Score</div><div class="value" id="score">0</div></div>
+    <div class="hud-item"><div class="label">Time</div><div class="value" id="time">30</div></div>
+    <div class="hud-item"><div class="label">Streak</div><div class="value" id="streak-count">0</div></div>
+  </div>
+  <div id="timer-bar"><div id="timer-fill"></div></div>
+  <div id="problem">?</div>
+  <div id="answers"></div>
+  <div id="streak"></div>
+</div>
+<div class="overlay" id="start-overlay">
+  <div class="overlay-box">
+    <h1>Math Rush</h1>
+    <p>Solve math problems as fast as you can!</p>
+    <p style="color:#555;">30 seconds. Streaks multiply your score.</p>
+    <button class="btn" onclick="startGame()">GO!</button>
+  </div>
+</div>
+<div class="overlay" id="end-overlay" style="display:none;">
+  <div class="overlay-box">
+    <h2>Time's Up!</h2>
+    <div class="big-score" id="final-score">0</div>
+    <p><span id="final-correct">0</span> correct | <span id="final-wrong">0</span> wrong</p>
+    <p>Max streak: <span id="final-streak" style="color:#f5d400;">0</span></p>
+    <button class="btn" onclick="startGame()">AGAIN</button>
+  </div>
+</div>
+<script src="/shared/game-client.js"></script>
+<script>
+let score, timeLeft, streak, maxStreak, correct, wrong, difficulty, timerInterval, gameActive;
+
+function startGame() {
+  document.getElementById('start-overlay').style.display = 'none';
+  document.getElementById('end-overlay').style.display = 'none';
+  document.getElementById('game-screen').style.display = 'block';
+
+  score = 0; timeLeft = 30; streak = 0; maxStreak = 0; correct = 0; wrong = 0; difficulty = 1;
+  gameActive = true;
+  updateHUD();
+  generateProblem();
+
+  clearInterval(timerInterval);
+  timerInterval = setInterval(() => {
+    timeLeft -= 0.1;
+    document.getElementById('time').textContent = Math.ceil(timeLeft);
+    document.getElementById('timer-fill').style.width = (timeLeft / 30 * 100) + '%';
+    if (timeLeft <= 0) endGame();
+  }, 100);
+}
+
+function generateProblem() {
+  difficulty = 1 + Math.floor(correct / 5);
+  const maxNum = 10 + difficulty * 5;
+  const ops = ['+', '-', '*'];
+  if (difficulty >= 3) ops.push('/');
+
+  const op = ops[Math.floor(Math.random() * ops.length)];
+  let a, b, answer;
+
+  if (op === '+') {
+    a = Math.floor(Math.random() * maxNum) + 1;
+    b = Math.floor(Math.random() * maxNum) + 1;
+    answer = a + b;
+  } else if (op === '-') {
+    a = Math.floor(Math.random() * maxNum) + 1;
+    b = Math.floor(Math.random() * a) + 1;
+    answer = a - b;
+  } else if (op === '*') {
+    a = Math.floor(Math.random() * 12) + 1;
+    b = Math.floor(Math.random() * 12) + 1;
+    answer = a * b;
+  } else {
+    b = Math.floor(Math.random() * 10) + 1;
+    answer = Math.floor(Math.random() * 10) + 1;
+    a = b * answer;
+  }
+
+  const symbol = op === '*' ? '\u00D7' : op === '/' ? '\u00F7' : op;
+  document.getElementById('problem').textContent = `${a} ${symbol} ${b}`;
+
+  // Generate wrong answers
+  const wrongAnswers = new Set();
+  while (wrongAnswers.size < 3) {
+    let w = answer + Math.floor(Math.random() * 10) - 5;
+    if (w !== answer && w >= 0) wrongAnswers.add(w);
+  }
+
+  const options = [answer, ...wrongAnswers];
+  // Shuffle
+  for (let i = options.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [options[i], options[j]] = [options[j], options[i]];
+  }
+
+  const container = document.getElementById('answers');
+  container.innerHTML = '';
+  options.forEach(opt => {
+    const btn = document.createElement('button');
+    btn.className = 'answer-btn';
+    btn.textContent = opt;
+    btn.onclick = () => checkAnswer(opt, answer, btn);
+    container.appendChild(btn);
+  });
+}
+
+function checkAnswer(selected, answer, btn) {
+  if (!gameActive) return;
+  const buttons = document.querySelectorAll('.answer-btn');
+  buttons.forEach(b => b.onclick = null);
+
+  if (selected === answer) {
+    btn.classList.add('correct');
+    streak++;
+    correct++;
+    if (streak > maxStreak) maxStreak = streak;
+    const multiplier = Math.min(streak, 5);
+    const points = 10 * multiplier;
+    score += points;
+    timeLeft = Math.min(30, timeLeft + 1); // Bonus time
+    document.getElementById('streak').textContent = streak >= 2 ? `Streak x${multiplier}! +${points}` : `+${points}`;
+  } else {
+    btn.classList.add('wrong');
+    // Highlight correct
+    buttons.forEach(b => { if (parseInt(b.textContent) === answer) b.classList.add('correct'); });
+    streak = 0;
+    wrong++;
+    timeLeft = Math.max(0, timeLeft - 2); // Time penalty
+    document.getElementById('streak').textContent = 'Wrong! -2s';
+  }
+
+  updateHUD();
+  setTimeout(generateProblem, 400);
+}
+
+function updateHUD() {
+  document.getElementById('score').textContent = score;
+  document.getElementById('streak-count').textContent = streak;
+}
+
+async function endGame() {
+  gameActive = false;
+  clearInterval(timerInterval);
+  document.getElementById('final-score').textContent = score;
+  document.getElementById('final-correct').textContent = correct;
+  document.getElementById('final-wrong').textContent = wrong;
+  document.getElementById('final-streak').textContent = maxStreak;
+  document.getElementById('end-overlay').style.display = 'flex';
+  await PlayFunClient.submitScore(score);
+}
+
+PlayFunClient.init('math-rush', 'GAME_ID_HERE');
+</script>
+</body>
+</html>

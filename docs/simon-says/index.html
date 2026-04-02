@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="x-ogp-key" content="fa29b0ef-94e6-4a82-b20f-08336b32c6c8">
+<title>Simon Says - Play.fun</title>
+<script src="https://sdk.play.fun"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a1a; color: #fff;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    overflow: hidden; height: 100vh;
+    display: flex; align-items: center; justify-content: center;
+    flex-direction: column;
+  }
+  #hub-link {
+    position: fixed; top: 16px; right: 20px;
+    color: #00f5d4; text-decoration: none; font-size: 0.95em;
+    z-index: 100; opacity: 0.8; transition: opacity 0.2s;
+  }
+  #hub-link:hover { opacity: 1; }
+  .overlay {
+    position: fixed; inset: 0;
+    background: rgba(10,10,26,0.92);
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    z-index: 50; backdrop-filter: blur(6px);
+  }
+  .overlay.hidden { display: none; }
+  .overlay h1 {
+    font-size: 2.8em; margin-bottom: 10px;
+    background: linear-gradient(135deg, #7b2ff7, #00f5d4);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .overlay p { color: #aaa; margin-bottom: 8px; font-size: 1.1em; }
+  .overlay .score-display { font-size: 2em; color: #00f5d4; margin: 10px 0; }
+  .btn {
+    padding: 14px 50px; font-size: 1.1em; font-weight: bold;
+    border: none; border-radius: 8px; cursor: pointer;
+    background: linear-gradient(135deg, #7b2ff7, #00f5d4);
+    color: #fff; margin-top: 15px;
+    transition: transform 0.15s, box-shadow 0.15s;
+  }
+  .btn:hover { transform: scale(1.05); box-shadow: 0 0 20px rgba(0,245,212,0.4); }
+  #game-area {
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    gap: 20px;
+  }
+  #game-area.active { display: flex; }
+  #info-bar {
+    display: flex; gap: 40px; font-size: 1.1em; margin-bottom: 10px;
+  }
+  #info-bar span { color: #aaa; }
+  #info-bar .val { color: #00f5d4; font-weight: bold; }
+  #status-text {
+    font-size: 1.2em; color: #aaa; min-height: 30px;
+    transition: color 0.2s;
+  }
+  #board {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 10px; width: 300px; height: 300px;
+  }
+  .quad {
+    border-radius: 16px; cursor: pointer;
+    transition: transform 0.1s, filter 0.15s;
+    border: 2px solid rgba(255,255,255,0.05);
+  }
+  .quad:active { transform: scale(0.95); }
+  .quad.lit { filter: brightness(2.2) drop-shadow(0 0 20px currentColor); transform: scale(1.05); }
+  #q0 { background: #ff2770; color: #ff2770; border-radius: 16px 4px 4px 4px; }
+  #q1 { background: #00f5d4; color: #00f5d4; border-radius: 4px 16px 4px 4px; }
+  #q2 { background: #7b2ff7; color: #7b2ff7; border-radius: 4px 4px 4px 16px; }
+  #q3 { background: #ff8c00; color: #ff8c00; border-radius: 4px 4px 16px 4px; }
+  .quad { opacity: 0.45; }
+  .quad.lit { opacity: 1; }
+</style>
+</head>
+<body>
+<a id="hub-link" href="/">&#8592; Back to Hub</a>
+
+<div id="game-area">
+  <div id="info-bar">
+    <div>Round: <span class="val" id="hud-round">1</span></div>
+    <div>Score: <span class="val" id="hud-score">0</span></div>
+  </div>
+  <div id="status-text">Watch carefully...</div>
+  <div id="board">
+    <div class="quad" id="q0"></div>
+    <div class="quad" id="q1"></div>
+    <div class="quad" id="q2"></div>
+    <div class="quad" id="q3"></div>
+  </div>
+</div>
+
+<div class="overlay" id="start-screen">
+  <h1>Simon Says</h1>
+  <p>Memorize the sequence and repeat it!</p>
+  <p style="color:#666;font-size:0.9em;">Click the quadrants in the correct order</p>
+  <button class="btn" id="start-btn">Play</button>
+</div>
+
+<div class="overlay hidden" id="game-over-screen">
+  <h1>Game Over</h1>
+  <div class="score-display" id="final-score">0</div>
+  <p id="final-msg"></p>
+  <button class="btn" id="restart-btn">Play Again</button>
+</div>
+
+<script src="/shared/game-client.js"></script>
+<script>
+PlayFunClient.init('simon-says', 'GAME_ID_HERE');
+
+const quads = [document.getElementById('q0'), document.getElementById('q1'), document.getElementById('q2'), document.getElementById('q3')];
+const statusEl = document.getElementById('status-text');
+let sequence = [];
+let playerIdx = 0;
+let round = 0;
+let score = 0;
+let accepting = false;
+
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+const TONES = [261.63, 329.63, 392.00, 523.25];
+
+function playTone(idx, dur = 0.25) {
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = 'sine';
+  osc.frequency.value = TONES[idx];
+  gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + dur);
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.start();
+  osc.stop(audioCtx.currentTime + dur);
+}
+
+function flash(idx, dur = 400) {
+  return new Promise(resolve => {
+    quads[idx].classList.add('lit');
+    playTone(idx, dur / 1000);
+    setTimeout(() => { quads[idx].classList.remove('lit'); setTimeout(resolve, 100); }, dur);
+  });
+}
+
+async function playSequence() {
+  accepting = false;
+  statusEl.textContent = 'Watch carefully...';
+  statusEl.style.color = '#aaa';
+  await new Promise(r => setTimeout(r, 600));
+  for (const idx of sequence) {
+    await flash(idx, Math.max(200, 400 - round * 20));
+  }
+  accepting = true;
+  playerIdx = 0;
+  statusEl.textContent = 'Your turn!';
+  statusEl.style.color = '#00f5d4';
+}
+
+function nextRound() {
+  round++;
+  document.getElementById('hud-round').textContent = round;
+  sequence.push(Math.floor(Math.random() * 4));
+  playSequence();
+}
+
+async function handlePress(idx) {
+  if (!accepting) return;
+  await flash(idx, 200);
+  if (sequence[playerIdx] === idx) {
+    playerIdx++;
+    if (playerIdx >= sequence.length) {
+      score += 10;
+      document.getElementById('hud-score').textContent = score;
+      accepting = false;
+      statusEl.textContent = 'Correct!';
+      statusEl.style.color = '#00f5d4';
+      setTimeout(nextRound, 800);
+    }
+  } else {
+    endGame();
+  }
+}
+
+quads.forEach((q, i) => {
+  q.addEventListener('click', () => handlePress(i));
+  q.addEventListener('touchstart', e => { e.preventDefault(); handlePress(i); });
+});
+
+function startGame() {
+  document.getElementById('start-screen').classList.add('hidden');
+  document.getElementById('game-over-screen').classList.add('hidden');
+  document.getElementById('game-area').classList.add('active');
+  sequence = [];
+  round = 0;
+  score = 0;
+  playerIdx = 0;
+  document.getElementById('hud-score').textContent = '0';
+  document.getElementById('hud-round').textContent = '0';
+  nextRound();
+}
+
+async function endGame() {
+  accepting = false;
+  statusEl.textContent = 'Wrong!';
+  statusEl.style.color = '#ff2770';
+  // flash all red
+  quads.forEach(q => { q.style.background = '#ff2770'; q.classList.add('lit'); });
+  setTimeout(() => {
+    quads.forEach((q, i) => { q.classList.remove('lit'); });
+    document.getElementById('q0').style.background = '#ff2770';
+    document.getElementById('q1').style.background = '#00f5d4';
+    document.getElementById('q2').style.background = '#7b2ff7';
+    document.getElementById('q3').style.background = '#ff8c00';
+  }, 500);
+
+  await new Promise(r => setTimeout(r, 800));
+  document.getElementById('game-area').classList.remove('active');
+  document.getElementById('final-score').textContent = score;
+  document.getElementById('final-msg').textContent = round > 10 ? 'Incredible memory!' : round > 5 ? 'Great focus!' : 'Keep practicing!';
+  document.getElementById('game-over-screen').classList.remove('hidden');
+  try { await PlayFunClient.submitScore(score); } catch(e) { console.warn(e); }
+}
+
+document.getElementById('start-btn').addEventListener('click', startGame);
+document.getElementById('restart-btn').addEventListener('click', startGame);
+</script>
+</body>
+</html>

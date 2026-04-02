@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="x-ogp-key" content="fa29b0ef-94e6-4a82-b20f-08336b32c6c8">
+<title>Reaction Time - Play.fun</title>
+<script src="https://sdk.play.fun"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a1a;
+    color: #fff;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    min-height: 100vh;
+    overflow: hidden;
+  }
+  .hub-link {
+    position: fixed; top: 16px; right: 20px; z-index: 1000;
+    color: #00f5d4; text-decoration: none; font-size: 0.95em;
+    opacity: 0.8; transition: opacity 0.2s;
+  }
+  .hub-link:hover { opacity: 1; }
+  .btn {
+    padding: 14px 50px; font-size: 1.1em; font-weight: bold;
+    border: none; border-radius: 8px; cursor: pointer;
+    background: linear-gradient(135deg, #7b2ff7, #00f5d4);
+    color: #fff; margin-top: 15px;
+    transition: transform 0.15s, box-shadow 0.15s;
+  }
+  .btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 25px rgba(123, 47, 247, 0.5);
+  }
+  .overlay {
+    position: fixed; inset: 0; background: rgba(10,10,26,0.95);
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: center; z-index: 100;
+    animation: fadeIn 0.3s ease;
+  }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  .overlay h1 {
+    font-size: 3em; margin-bottom: 10px;
+    background: linear-gradient(135deg, #7b2ff7, #00f5d4);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .overlay p { color: #aaa; font-size: 1.1em; margin-bottom: 5px; max-width: 500px; text-align: center; }
+  .overlay .score-display {
+    font-size: 2.5em; font-weight: bold; color: #00f5d4;
+    text-shadow: 0 0 20px rgba(0,245,212,0.5); margin: 15px 0;
+  }
+  #game-area {
+    width: 100vw; height: 100vh;
+    display: flex; align-items: center; justify-content: center;
+    flex-direction: column; cursor: pointer;
+    transition: background 0.15s;
+    user-select: none;
+  }
+  #game-area.waiting { background: #ff2770; }
+  #game-area.ready { background: #00c853; }
+  #game-area.idle { background: #0a0a1a; }
+  #game-area.too-early { background: #ff8f00; }
+  .game-text {
+    font-size: 2.2em; font-weight: bold;
+    text-shadow: 0 2px 15px rgba(0,0,0,0.5);
+    pointer-events: none;
+  }
+  .round-info {
+    position: fixed; top: 16px; left: 20px;
+    font-size: 1em; color: #aaa; z-index: 50;
+  }
+  .reaction-time-display {
+    font-size: 4em; font-weight: bold; color: #00f5d4;
+    text-shadow: 0 0 30px rgba(0,245,212,0.4);
+    pointer-events: none;
+    animation: popIn 0.3s ease;
+  }
+  @keyframes popIn {
+    from { transform: scale(0.5); opacity: 0; }
+    to { transform: scale(1); opacity: 1; }
+  }
+  .times-list {
+    display: flex; gap: 12px; margin: 15px 0;
+  }
+  .times-list span {
+    background: rgba(123,47,247,0.2); border: 1px solid rgba(123,47,247,0.4);
+    padding: 6px 14px; border-radius: 6px; font-size: 0.95em;
+  }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<a href="/" class="hub-link">&#8592; Back to Hub</a>
+<div class="round-info hidden" id="round-info">Round <span id="round-num">1</span> / 5</div>
+
+<div id="start-screen" class="overlay">
+  <h1>Reaction Time</h1>
+  <p>When the screen turns GREEN, click as fast as you can!</p>
+  <p>5 rounds. Fastest average wins.</p>
+  <button class="btn" id="start-btn">Start Game</button>
+</div>
+
+<div id="gameover-screen" class="overlay hidden">
+  <h1>Results</h1>
+  <div class="times-list" id="times-list"></div>
+  <p>Average Reaction Time</p>
+  <div class="score-display" id="avg-time">0ms</div>
+  <p>Score</p>
+  <div class="score-display" id="final-score">0</div>
+  <button class="btn" id="restart-btn">Play Again</button>
+</div>
+
+<div id="game-area" class="idle hidden">
+  <div class="game-text" id="game-text"></div>
+</div>
+
+<script src="/shared/game-client.js"></script>
+<script>
+PlayFunClient.init('reaction-time', 'GAME_ID_HERE');
+
+const ROUNDS = 5;
+let round = 0;
+let times = [];
+let state = 'idle';
+let greenTime = 0;
+let timeout = null;
+
+const gameArea = document.getElementById('game-area');
+const gameText = document.getElementById('game-text');
+const roundInfo = document.getElementById('round-info');
+const roundNum = document.getElementById('round-num');
+const startScreen = document.getElementById('start-screen');
+const gameoverScreen = document.getElementById('gameover-screen');
+
+document.getElementById('start-btn').addEventListener('click', startGame);
+document.getElementById('restart-btn').addEventListener('click', startGame);
+
+function startGame() {
+  round = 0;
+  times = [];
+  startScreen.classList.add('hidden');
+  gameoverScreen.classList.add('hidden');
+  gameArea.classList.remove('hidden');
+  roundInfo.classList.remove('hidden');
+  nextRound();
+}
+
+function nextRound() {
+  round++;
+  if (round > ROUNDS) return endGame();
+  roundNum.textContent = round;
+  state = 'waiting';
+  gameArea.className = 'waiting';
+  gameText.textContent = 'Wait for green...';
+  const delay = 1500 + Math.random() * 3500;
+  timeout = setTimeout(() => {
+    state = 'ready';
+    gameArea.className = 'ready';
+    gameText.textContent = 'CLICK NOW!';
+    greenTime = performance.now();
+  }, delay);
+}
+
+gameArea.addEventListener('click', () => {
+  if (state === 'waiting') {
+    clearTimeout(timeout);
+    state = 'too-early';
+    gameArea.className = 'too-early';
+    gameText.textContent = 'Too early! Click to retry round.';
+    state = 'penalty';
+  } else if (state === 'penalty') {
+    round--;
+    nextRound();
+  } else if (state === 'ready') {
+    const reaction = Math.round(performance.now() - greenTime);
+    times.push(reaction);
+    state = 'result';
+    gameArea.className = 'idle';
+    gameText.innerHTML = `<div class="reaction-time-display">${reaction}ms</div>`;
+    setTimeout(nextRound, 1200);
+  }
+});
+
+async function endGame() {
+  gameArea.classList.add('hidden');
+  roundInfo.classList.add('hidden');
+  const avg = Math.round(times.reduce((a, b) => a + b, 0) / times.length);
+  const score = Math.max(0, Math.round(10000 / (avg / 100)));
+  document.getElementById('times-list').innerHTML = times.map((t, i) =>
+    `<span>R${i + 1}: ${t}ms</span>`
+  ).join('');
+  document.getElementById('avg-time').textContent = avg + 'ms';
+  document.getElementById('final-score').textContent = score;
+  gameoverScreen.classList.remove('hidden');
+  try { await PlayFunClient.submitScore(score); } catch (e) { console.error(e); }
+}
+</script>
+</body>
+</html>

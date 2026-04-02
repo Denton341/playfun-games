@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="x-ogp-key" content="fa29b0ef-94e6-4a82-b20f-08336b32c6c8">
+<title>Color Match</title>
+<script src="https://sdk.play.fun"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a1a; color: #fff;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    min-height: 100vh; display: flex; flex-direction: column; align-items: center;
+    overflow: hidden;
+  }
+  .hub-link {
+    position: fixed; top: 15px; right: 20px;
+    color: #00f5d4; text-decoration: none; font-size: 0.95em;
+    z-index: 100; opacity: 0.8; transition: opacity 0.2s;
+  }
+  .hub-link:hover { opacity: 1; }
+  .btn {
+    padding: 14px 50px; font-size: 1.1em; font-weight: bold;
+    border: none; border-radius: 8px; cursor: pointer;
+    background: linear-gradient(135deg, #7b2ff7, #00f5d4);
+    color: #fff; margin-top: 15px; transition: transform 0.15s, box-shadow 0.15s;
+  }
+  .btn:hover { transform: scale(1.05); box-shadow: 0 0 25px rgba(0,245,212,0.4); }
+  .btn:active { transform: scale(0.97); }
+  .overlay {
+    position: fixed; inset: 0; background: rgba(10,10,26,0.92);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    z-index: 50; backdrop-filter: blur(6px);
+  }
+  .overlay h1 { font-size: 2.8em; margin-bottom: 10px; background: linear-gradient(135deg, #7b2ff7, #00f5d4); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  .overlay p { font-size: 1.2em; color: #aaa; margin-bottom: 5px; }
+  .overlay .final-score { font-size: 3em; color: #00f5d4; margin: 10px 0; text-shadow: 0 0 20px rgba(0,245,212,0.5); }
+  #hud {
+    display: flex; gap: 30px; font-size: 1.2em;
+    margin: 60px 0 30px; z-index: 10;
+  }
+  #hud span { color: #00f5d4; }
+  #gameArea {
+    display: flex; flex-direction: column; align-items: center; gap: 30px;
+  }
+  #colorWord {
+    font-size: 4em; font-weight: 900; letter-spacing: 3px;
+    text-shadow: 0 0 30px rgba(0,0,0,0.5);
+    transition: transform 0.15s;
+    user-select: none; min-height: 1.2em;
+  }
+  #instruction {
+    color: #666; font-size: 1em; margin-bottom: 10px;
+  }
+  .answer-buttons {
+    display: flex; gap: 20px;
+  }
+  .answer-btn {
+    padding: 16px 40px; font-size: 1.2em; font-weight: bold;
+    border: 2px solid transparent; border-radius: 10px; cursor: pointer;
+    transition: all 0.15s; color: #fff;
+  }
+  .answer-btn.match {
+    background: rgba(0,245,212,0.15); border-color: #00f5d4;
+  }
+  .answer-btn.match:hover { background: rgba(0,245,212,0.3); transform: scale(1.05); box-shadow: 0 0 20px rgba(0,245,212,0.3); }
+  .answer-btn.no-match {
+    background: rgba(255,39,112,0.15); border-color: #ff2770;
+  }
+  .answer-btn.no-match:hover { background: rgba(255,39,112,0.3); transform: scale(1.05); box-shadow: 0 0 20px rgba(255,39,112,0.3); }
+  #feedback {
+    font-size: 1.5em; font-weight: bold; min-height: 1.5em;
+    transition: opacity 0.3s;
+  }
+  #streak {
+    color: #7b2ff7; font-size: 1em; min-height: 1.2em;
+  }
+  @keyframes shake {
+    0%,100% { transform: translateX(0); }
+    25% { transform: translateX(-8px); }
+    75% { transform: translateX(8px); }
+  }
+  @keyframes popIn {
+    0% { transform: scale(0.5); opacity: 0; }
+    100% { transform: scale(1); opacity: 1; }
+  }
+  .pop-in { animation: popIn 0.25s ease-out; }
+  .shake { animation: shake 0.3s ease-out; }
+</style>
+</head>
+<body>
+<a class="hub-link" href="/">&#8592; Back to Hub</a>
+
+<div id="startScreen" class="overlay">
+  <h1>Color Match</h1>
+  <p>Does the word match its text color?</p>
+  <p style="color:#666; font-size:0.9em;">The Stroop effect will trick your brain! 30 seconds.</p>
+  <button class="btn" onclick="startGame()">Play</button>
+</div>
+
+<div id="gameOverScreen" class="overlay" style="display:none;">
+  <h1>Time's Up!</h1>
+  <p>Your Score</p>
+  <div class="final-score" id="finalScore">0</div>
+  <p id="statsLine" style="color:#888;"></p>
+  <button class="btn" onclick="startGame()">Play Again</button>
+</div>
+
+<div id="hud">
+  <div>Score: <span id="scoreDisplay">0</span></div>
+  <div>Time: <span id="timeDisplay">30</span>s</div>
+</div>
+
+<div id="gameArea">
+  <div id="instruction">Does the WORD match its COLOR?</div>
+  <div id="colorWord">RED</div>
+  <div id="streak"></div>
+  <div class="answer-buttons">
+    <button class="answer-btn match" onclick="answer(true)">MATCH</button>
+    <button class="answer-btn no-match" onclick="answer(false)">NO MATCH</button>
+  </div>
+  <div id="feedback"></div>
+</div>
+
+<script src="/shared/game-client.js"></script>
+<script>
+PlayFunClient.init('color-match', 'GAME_ID_HERE');
+
+const COLORS = [
+  { name: 'RED', hex: '#ff2770' },
+  { name: 'BLUE', hex: '#4488ff' },
+  { name: 'GREEN', hex: '#00f5d4' },
+  { name: 'YELLOW', hex: '#ffd700' },
+  { name: 'PURPLE', hex: '#7b2ff7' },
+  { name: 'ORANGE', hex: '#ff8c00' },
+  { name: 'PINK', hex: '#ff69b4' },
+  { name: 'WHITE', hex: '#ffffff' },
+];
+
+const wordEl = document.getElementById('colorWord');
+const feedbackEl = document.getElementById('feedback');
+const streakEl = document.getElementById('streak');
+const scoreDisplay = document.getElementById('scoreDisplay');
+const timeDisplay = document.getElementById('timeDisplay');
+
+let score, timeLeft, gameActive, timer, streak, correct, total, currentMatch;
+
+function newRound() {
+  const wordColor = COLORS[Math.floor(Math.random() * COLORS.length)];
+  let textColor;
+  // ~40% chance of match
+  if (Math.random() < 0.4) {
+    textColor = wordColor;
+    currentMatch = true;
+  } else {
+    do { textColor = COLORS[Math.floor(Math.random() * COLORS.length)]; } while (textColor === wordColor);
+    currentMatch = false;
+  }
+  wordEl.textContent = wordColor.name;
+  wordEl.style.color = textColor.hex;
+  wordEl.className = 'pop-in';
+  setTimeout(() => wordEl.className = '', 250);
+}
+
+function answer(playerSaysMatch) {
+  if (!gameActive) return;
+  total++;
+  if (playerSaysMatch === currentMatch) {
+    streak++;
+    const bonus = Math.min(streak, 5);
+    const pts = 10 * bonus;
+    score += pts;
+    correct++;
+    feedbackEl.textContent = `+${pts}`;
+    feedbackEl.style.color = '#00f5d4';
+    streakEl.textContent = streak > 1 ? `Streak: ${streak}x` : '';
+  } else {
+    streak = 0;
+    score = Math.max(0, score - 5);
+    feedbackEl.textContent = currentMatch ? 'It matched!' : 'No match!';
+    feedbackEl.style.color = '#ff2770';
+    streakEl.textContent = '';
+    wordEl.classList.add('shake');
+    setTimeout(() => wordEl.classList.remove('shake'), 300);
+  }
+  scoreDisplay.textContent = score;
+  setTimeout(() => { feedbackEl.textContent = ''; }, 600);
+  newRound();
+}
+
+function startGame() {
+  document.getElementById('startScreen').style.display = 'none';
+  document.getElementById('gameOverScreen').style.display = 'none';
+  score = 0; timeLeft = 30; gameActive = true; streak = 0; correct = 0; total = 0;
+  scoreDisplay.textContent = 0;
+  timeDisplay.textContent = 30;
+  feedbackEl.textContent = '';
+  streakEl.textContent = '';
+  newRound();
+  timer = setInterval(() => {
+    timeLeft--;
+    timeDisplay.textContent = timeLeft;
+    if (timeLeft <= 0) endGame();
+  }, 1000);
+}
+
+async function endGame() {
+  gameActive = false;
+  clearInterval(timer);
+  document.getElementById('finalScore').textContent = score;
+  document.getElementById('statsLine').textContent = `${correct}/${total} correct (${total ? Math.round(correct/total*100) : 0}%)`;
+  document.getElementById('gameOverScreen').style.display = 'flex';
+  try { await PlayFunClient.submitScore(score); } catch(e) { console.warn('Score submit failed', e); }
+}
+
+// Keyboard shortcuts
+document.addEventListener('keydown', (e) => {
+  if (!gameActive) return;
+  if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') answer(true);
+  if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') answer(false);
+});
+</script>
+</body>
+</html>
