@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="x-ogp-key" content="fa29b0ef-94e6-4a82-b20f-08336b32c6c8">
+<title>Tap Frenzy - Reflex Tapper</title>
+<script src="https://sdk.play.fun"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0a0a1a; color: #fff; font-family: 'Segoe UI', system-ui, sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; overflow: hidden; user-select: none; }
+  .container { text-align: center; width: 100%; max-width: 500px; padding: 20px; }
+  #timer { font-size: 6em; font-weight: bold; color: #00f5d4; text-shadow: 0 0 30px rgba(0,245,212,0.3); }
+  #tap-count { font-size: 10em; font-weight: bold; background: linear-gradient(135deg, #7b2ff7, #00f5d4); -webkit-background-clip: text; -webkit-text-fill-color: transparent; line-height: 1; }
+  #tps { color: #888; font-size: 1.5em; margin-top: 10px; }
+  #tap-area {
+    width: 280px; height: 280px; border-radius: 50%; margin: 30px auto;
+    background: radial-gradient(circle, #1a1a3a, #14141f);
+    border: 3px solid #2a2a4a; display: flex; align-items: center; justify-content: center;
+    cursor: pointer; transition: transform 0.05s, border-color 0.1s; position: relative;
+    -webkit-tap-highlight-color: transparent;
+  }
+  #tap-area:active { transform: scale(0.95); border-color: #00f5d4; }
+  #tap-area .label { color: #555; font-size: 1.5em; font-weight: bold; pointer-events: none; }
+  .ripple {
+    position: absolute; border-radius: 50%; background: rgba(0,245,212,0.3);
+    animation: rippleAnim 0.4s ease-out forwards; pointer-events: none;
+  }
+  @keyframes rippleAnim { to { transform: scale(3); opacity: 0; } }
+  #progress-ring { position: absolute; top: -5px; left: -5px; pointer-events: none; }
+  .overlay { position: fixed; top:0; left:0; width:100%; height:100%; background: rgba(10,10,26,0.95); display: flex; align-items: center; justify-content: center; z-index: 10; }
+  .overlay-box { text-align: center; padding: 40px; }
+  .overlay-box h1 { color: #00f5d4; font-size: 2.5em; margin-bottom: 5px; }
+  .overlay-box h2 { font-size: 2em; margin-bottom: 10px; }
+  .overlay-box p { color: #888; margin: 5px 0; }
+  .big-score { color: #00f5d4; font-size: 5em; font-weight: bold; line-height: 1.1; }
+  .stat { color: #888; font-size: 1.2em; }
+  .btn { padding: 14px 50px; font-size: 1.2em; font-weight: bold; border: none; border-radius: 8px; cursor: pointer; background: linear-gradient(135deg, #7b2ff7, #00f5d4); color: #fff; margin-top: 20px; }
+  .btn:hover { transform: scale(1.05); }
+  .back-link { position: fixed; top: 20px; right: 20px; color: #555; text-decoration: none; font-size: 14px; z-index: 20; }
+  .back-link:hover { color: #00f5d4; }
+  .countdown { font-size: 8em; color: #7b2ff7; font-weight: bold; animation: pulse 0.5s ease-in-out; }
+  @keyframes pulse { 0% { transform: scale(1.5); opacity: 0; } 50% { opacity: 1; } 100% { transform: scale(1); } }
+</style>
+</head>
+<body>
+<a href="/" class="back-link">Back to Hub</a>
+<div class="container" id="game-screen" style="display:none;">
+  <div id="timer">10.0</div>
+  <div id="tap-area">
+    <svg id="progress-ring" width="290" height="290">
+      <circle cx="145" cy="145" r="138" fill="none" stroke="#2a2a4a" stroke-width="4"/>
+      <circle id="ring" cx="145" cy="145" r="138" fill="none" stroke="#00f5d4" stroke-width="4"
+        stroke-dasharray="867" stroke-dashoffset="0" stroke-linecap="round"
+        transform="rotate(-90 145 145)"/>
+    </svg>
+    <div class="label">TAP!</div>
+  </div>
+  <div id="tap-count">0</div>
+  <div id="tps">0.0 taps/sec</div>
+</div>
+<div class="overlay" id="start-overlay">
+  <div class="overlay-box">
+    <h1>Tap Frenzy</h1>
+    <p>Tap as fast as you can in 10 seconds!</p>
+    <p style="color:#555;">Touch or click the circle</p>
+    <button class="btn" onclick="beginCountdown()">READY?</button>
+  </div>
+</div>
+<div class="overlay" id="countdown-overlay" style="display:none;">
+  <div class="overlay-box">
+    <div class="countdown" id="cd-number">3</div>
+  </div>
+</div>
+<div class="overlay" id="end-overlay" style="display:none;">
+  <div class="overlay-box">
+    <h2>Results</h2>
+    <div class="big-score" id="final-taps">0</div>
+    <div class="stat">taps in 10 seconds</div>
+    <p style="margin-top:10px;"><span id="final-tps" style="color:#00f5d4; font-weight:bold;">0</span> taps/sec</p>
+    <p>Best: <span id="best-score" style="color:#7b2ff7;">0</span></p>
+    <button class="btn" onclick="beginCountdown()">AGAIN</button>
+  </div>
+</div>
+<script src="/shared/game-client.js"></script>
+<script>
+let taps = 0, timeLeft = 10, gameActive = false, timerInterval;
+let bestScore = parseInt(localStorage.getItem('tap-frenzy-best') || '0');
+const DURATION = 10;
+const CIRCUMFERENCE = 2 * Math.PI * 138;
+
+function beginCountdown() {
+  document.getElementById('start-overlay').style.display = 'none';
+  document.getElementById('end-overlay').style.display = 'none';
+  document.getElementById('countdown-overlay').style.display = 'flex';
+
+  let count = 3;
+  document.getElementById('cd-number').textContent = count;
+  const cdInterval = setInterval(() => {
+    count--;
+    if (count <= 0) {
+      clearInterval(cdInterval);
+      document.getElementById('countdown-overlay').style.display = 'none';
+      startGame();
+    } else {
+      document.getElementById('cd-number').textContent = count;
+      // Re-trigger animation
+      const el = document.getElementById('cd-number');
+      el.style.animation = 'none';
+      el.offsetHeight;
+      el.style.animation = 'pulse 0.5s ease-in-out';
+    }
+  }, 800);
+}
+
+function startGame() {
+  document.getElementById('game-screen').style.display = 'block';
+  taps = 0;
+  timeLeft = DURATION;
+  gameActive = true;
+  document.getElementById('tap-count').textContent = '0';
+  document.getElementById('tps').textContent = '0.0 taps/sec';
+  document.getElementById('timer').textContent = '10.0';
+  document.getElementById('ring').style.strokeDashoffset = '0';
+
+  const startTime = Date.now();
+  timerInterval = setInterval(() => {
+    const elapsed = (Date.now() - startTime) / 1000;
+    timeLeft = Math.max(0, DURATION - elapsed);
+    document.getElementById('timer').textContent = timeLeft.toFixed(1);
+
+    // Progress ring
+    const progress = elapsed / DURATION;
+    document.getElementById('ring').style.strokeDashoffset = (progress * CIRCUMFERENCE).toString();
+
+    // TPS
+    if (elapsed > 0) {
+      document.getElementById('tps').textContent = (taps / elapsed).toFixed(1) + ' taps/sec';
+    }
+
+    if (timeLeft <= 0) endGame();
+  }, 50);
+}
+
+const tapArea = document.getElementById('tap-area');
+tapArea.addEventListener('mousedown', handleTap);
+tapArea.addEventListener('touchstart', e => { e.preventDefault(); handleTap(e); });
+
+function handleTap(e) {
+  if (!gameActive) return;
+  taps++;
+  document.getElementById('tap-count').textContent = taps;
+
+  // Ripple effect
+  const ripple = document.createElement('div');
+  ripple.className = 'ripple';
+  ripple.style.width = ripple.style.height = '60px';
+  ripple.style.left = '110px';
+  ripple.style.top = '110px';
+  tapArea.appendChild(ripple);
+  setTimeout(() => ripple.remove(), 400);
+}
+
+async function endGame() {
+  gameActive = false;
+  clearInterval(timerInterval);
+  document.getElementById('game-screen').style.display = 'none';
+
+  if (taps > bestScore) {
+    bestScore = taps;
+    localStorage.setItem('tap-frenzy-best', bestScore);
+  }
+
+  document.getElementById('final-taps').textContent = taps;
+  document.getElementById('final-tps').textContent = (taps / DURATION).toFixed(1);
+  document.getElementById('best-score').textContent = bestScore;
+  document.getElementById('end-overlay').style.display = 'flex';
+
+  await PlayFunClient.submitScore(taps);
+}
+
+PlayFunClient.init('tap-frenzy', 'GAME_ID_HERE');
+</script>
+</body>
+</html>

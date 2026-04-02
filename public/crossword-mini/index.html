@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="x-ogp-key" content="fa29b0ef-94e6-4a82-b20f-08336b32c6c8">
+<title>Crossword Mini</title>
+<script src="https://sdk.play.fun"></script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #0a0a1a; color: #fff;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  min-height: 100vh; display: flex; flex-direction: column; align-items: center;
+}
+.btn {
+  padding: 14px 50px; font-size: 1.1em; font-weight: bold; border: none;
+  border-radius: 8px; cursor: pointer;
+  background: linear-gradient(135deg, #7b2ff7, #00f5d4);
+  color: #fff; margin-top: 15px;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+.btn:hover { transform: scale(1.05); box-shadow: 0 0 25px rgba(0,245,212,0.4); }
+#hubLink {
+  position: fixed; top: 15px; right: 20px; z-index: 100;
+  color: #00f5d4; text-decoration: none; font-size: 0.95em;
+  opacity: 0.8; transition: opacity 0.2s;
+}
+#hubLink:hover { opacity: 1; }
+.overlay {
+  position: fixed; inset: 0; background: rgba(10,10,26,0.92);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  z-index: 50; text-align: center;
+}
+.overlay h1 {
+  font-size: 2.8em; margin-bottom: 10px;
+  background: linear-gradient(135deg, #7b2ff7, #00f5d4);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+}
+.overlay p { color: #aaa; font-size: 1.1em; margin: 5px 0; }
+.score-display {
+  font-size: 2em; color: #00f5d4; margin: 15px 0;
+  text-shadow: 0 0 20px rgba(0,245,212,0.5);
+}
+.hidden { display: none !important; }
+
+#gameArea {
+  display: flex; flex-direction: column; align-items: center;
+  padding-top: 60px; width: 100%;
+}
+.grid-container {
+  display: grid; grid-template-columns: repeat(5, 56px); grid-template-rows: repeat(5, 56px);
+  gap: 3px; margin: 20px 0;
+}
+.cell {
+  width: 56px; height: 56px; position: relative;
+  background: #1a1a2e; border: 2px solid #2a2a4a;
+  border-radius: 4px; display: flex; align-items: center; justify-content: center;
+}
+.cell.blocked { background: #0a0a1a; border-color: #0a0a1a; }
+.cell input {
+  width: 100%; height: 100%; background: transparent; border: none;
+  color: #fff; font-size: 1.4em; font-weight: bold; text-align: center;
+  text-transform: uppercase; outline: none; caret-color: #00f5d4;
+}
+.cell input:focus { background: rgba(0,245,212,0.1); }
+.cell .cell-number {
+  position: absolute; top: 2px; left: 4px; font-size: 0.6em; color: #7b2ff7;
+  pointer-events: none;
+}
+.cell.correct { border-color: #00f5d4; box-shadow: 0 0 8px rgba(0,245,212,0.3); }
+.cell.wrong { border-color: #ff2770; box-shadow: 0 0 8px rgba(255,39,112,0.3); }
+.cell.selected { border-color: #00f5d4; background: rgba(0,245,212,0.08); }
+
+.clues { display: flex; gap: 40px; max-width: 500px; width: 90%; margin-bottom: 20px; }
+.clue-section h3 { color: #7b2ff7; margin-bottom: 8px; font-size: 1em; }
+.clue-section p { color: #aaa; font-size: 0.85em; margin: 4px 0; line-height: 1.4; }
+.clue-section p span { color: #00f5d4; font-weight: bold; }
+
+.hud {
+  display: flex; gap: 30px; font-size: 1.1em; color: #00f5d4;
+  text-shadow: 0 0 10px rgba(0,245,212,0.4); margin-top: 15px;
+}
+#checkBtn { margin-top: 10px; padding: 10px 30px; font-size: 0.95em; }
+</style>
+</head>
+<body>
+<a id="hubLink" href="/">&#8592; Back to Hub</a>
+
+<div id="gameArea" class="hidden">
+  <div class="hud">
+    <div>Puzzle: <span id="puzzleNum">1</span>/5</div>
+    <div>Time: <span id="timer">0:00</span></div>
+    <div>Score: <span id="scoreText">0</span></div>
+  </div>
+  <div class="grid-container" id="grid"></div>
+  <div class="clues" id="clues"></div>
+  <button class="btn" id="checkBtn">Check Puzzle</button>
+</div>
+
+<div class="overlay" id="startScreen">
+  <h1>Crossword Mini</h1>
+  <p>Solve 5x5 mini crosswords as fast as you can!</p>
+  <p style="color:#666; font-size:0.9em;">Accuracy + speed = higher score</p>
+  <button class="btn" id="startBtn">Play</button>
+</div>
+
+<div class="overlay hidden" id="gameOverScreen">
+  <h1>All Done!</h1>
+  <div class="score-display" id="finalScore">0</div>
+  <p id="gameOverMsg">Great vocabulary!</p>
+  <button class="btn" id="restartBtn">Play Again</button>
+</div>
+
+<script src="/shared/game-client.js"></script>
+<script>
+PlayFunClient.init('crossword-mini', 'GAME_ID_HERE');
+
+const puzzles = [
+  {
+    grid: [
+      ['S','T','A','R','S'],
+      ['H','O','_','I','_'],
+      ['A','N','A','N','A'],
+      ['R','E','_','G','_'],
+      ['E','S','A','S','K']
+    ],
+    cluesAcross: [
+      {n:1, clue:'Celestial bodies', row:0, col:0, len:5},
+      {n:3, clue:'Tropical fruit', row:2, col:0, len:5},
+      {n:5, clue:'Inquire', row:4, col:0, len:5}
+    ],
+    cluesDown: [
+      {n:1, clue:'Portion', row:0, col:0, len:5},
+      {n:2, clue:'Musical sounds', row:0, col:1, len:5},
+      {n:4, clue:'Circular band', row:0, col:3, len:5}
+    ]
+  },
+  {
+    grid: [
+      ['L','I','G','H','T'],
+      ['A','_','A','_','O'],
+      ['M','O','V','E','S'],
+      ['P','_','E','_','T'],
+      ['S','T','E','E','L']
+    ],
+    cluesAcross: [
+      {n:1, clue:'Not heavy; illumination', row:0, col:0, len:5},
+      {n:3, clue:'Relocates', row:2, col:0, len:5},
+      {n:5, clue:'Strong alloy', row:4, col:0, len:5}
+    ],
+    cluesDown: [
+      {n:1, clue:'Floor lights', row:0, col:0, len:5},
+      {n:2, clue:'Provide, present', row:0, col:2, len:5},
+      {n:4, clue:'Bread device', row:0, col:4, len:5}
+    ]
+  },
+  {
+    grid: [
+      ['B','R','A','V','E'],
+      ['L','_','N','_','A'],
+      ['A','R','G','U','E'],
+      ['S','_','E','_','R'],
+      ['T','R','E','A','T']
+    ],
+    cluesAcross: [
+      {n:1, clue:'Courageous', row:0, col:0, len:5},
+      {n:3, clue:'Dispute', row:2, col:0, len:5},
+      {n:5, clue:'Special gift or candy', row:4, col:0, len:5}
+    ],
+    cluesDown: [
+      {n:1, clue:'Explosion', row:0, col:0, len:5},
+      {n:2, clue:'Fury, wrath', row:0, col:2, len:5},
+      {n:4, clue:'Sooner, before', row:0, col:4, len:5}
+    ]
+  },
+  {
+    grid: [
+      ['C','L','O','S','E'],
+      ['A','_','N','_','V'],
+      ['S','H','E','L','F'],
+      ['E','_','S','_','I'],
+      ['S','P','I','C','E']
+    ],
+    cluesAcross: [
+      {n:1, clue:'Shut; nearby', row:0, col:0, len:5},
+      {n:3, clue:'Storage ledge', row:2, col:0, len:5},
+      {n:5, clue:'Seasoning', row:4, col:0, len:5}
+    ],
+    cluesDown: [
+      {n:1, clue:'Legal matters', row:0, col:0, len:5},
+      {n:2, clue:'Truthful', row:0, col:2, len:5},
+      {n:4, clue:'Plural of self', row:0, col:4, len:5}
+    ]
+  },
+  {
+    grid: [
+      ['P','L','A','N','E'],
+      ['I','_','R','_','X'],
+      ['T','R','E','N','D'],
+      ['C','_','N','_','I'],
+      ['H','O','A','R','D']
+    ],
+    cluesAcross: [
+      {n:1, clue:'Aircraft', row:0, col:0, len:5},
+      {n:3, clue:'Popular direction', row:2, col:0, len:5},
+      {n:5, clue:'Stockpile', row:4, col:0, len:5}
+    ],
+    cluesDown: [
+      {n:1, clue:'Baseball area', row:0, col:0, len:5},
+      {n:2, clue:'Location; stadium', row:0, col:2, len:5},
+      {n:4, clue:'Leave, depart', row:0, col:4, len:5}
+    ]
+  },
+  {
+    grid: [
+      ['G','R','A','I','N'],
+      ['L','_','C','_','O'],
+      ['O','R','B','I','T'],
+      ['B','_','E','_','E'],
+      ['E','D','G','E','S']
+    ],
+    cluesAcross: [
+      {n:1, clue:'Cereal seed', row:0, col:0, len:5},
+      {n:3, clue:'Path around a planet', row:2, col:0, len:5},
+      {n:5, clue:'Borders, rims', row:4, col:0, len:5}
+    ],
+    cluesDown: [
+      {n:1, clue:'Worldwide', row:0, col:0, len:5},
+      {n:2, clue:'Expert; pro', row:0, col:2, len:5},
+      {n:4, clue:'Written memos', row:0, col:4, len:5}
+    ]
+  }
+];
+
+let currentPuzzle = 0;
+let totalScore = 0;
+let startTime = 0;
+let timerInterval;
+let attempts = 0;
+
+function buildGrid(puzzle) {
+  const gridEl = document.getElementById('grid');
+  gridEl.innerHTML = '';
+  const g = puzzle.grid;
+  // number map
+  let numMap = {};
+  [...puzzle.cluesAcross, ...puzzle.cluesDown].forEach(c => {
+    let key = c.row + ',' + c.col;
+    numMap[key] = numMap[key] || c.n;
+  });
+
+  for (let r = 0; r < 5; r++) {
+    for (let c = 0; c < 5; c++) {
+      let cell = document.createElement('div');
+      cell.className = 'cell';
+      if (g[r][c] === '_') {
+        cell.classList.add('blocked');
+      } else {
+        let inp = document.createElement('input');
+        inp.maxLength = 1;
+        inp.dataset.row = r;
+        inp.dataset.col = c;
+        inp.addEventListener('input', function() {
+          this.value = this.value.toUpperCase();
+          if (this.value) moveToNext(r, c);
+        });
+        inp.addEventListener('keydown', function(e) {
+          if (e.key === 'Backspace' && !this.value) moveToPrev(r, c);
+        });
+        cell.appendChild(inp);
+        let key = r + ',' + c;
+        if (numMap[key]) {
+          let num = document.createElement('span');
+          num.className = 'cell-number';
+          num.textContent = numMap[key];
+          cell.appendChild(num);
+        }
+      }
+      gridEl.appendChild(cell);
+    }
+  }
+}
+
+function moveToNext(r, c) {
+  let inputs = [...document.querySelectorAll('.cell input')];
+  let idx = inputs.findIndex(i => +i.dataset.row === r && +i.dataset.col === c);
+  if (idx < inputs.length - 1) inputs[idx + 1].focus();
+}
+
+function moveToPrev(r, c) {
+  let inputs = [...document.querySelectorAll('.cell input')];
+  let idx = inputs.findIndex(i => +i.dataset.row === r && +i.dataset.col === c);
+  if (idx > 0) inputs[idx - 1].focus();
+}
+
+function buildClues(puzzle) {
+  const el = document.getElementById('clues');
+  el.innerHTML = '';
+  let across = document.createElement('div');
+  across.className = 'clue-section';
+  across.innerHTML = '<h3>Across</h3>';
+  puzzle.cluesAcross.forEach(c => {
+    across.innerHTML += `<p><span>${c.n}.</span> ${c.clue}</p>`;
+  });
+  let down = document.createElement('div');
+  down.className = 'clue-section';
+  down.innerHTML = '<h3>Down</h3>';
+  puzzle.cluesDown.forEach(c => {
+    down.innerHTML += `<p><span>${c.n}.</span> ${c.clue}</p>`;
+  });
+  el.appendChild(across);
+  el.appendChild(down);
+}
+
+function checkPuzzle() {
+  const puzzle = puzzles[currentPuzzle];
+  const g = puzzle.grid;
+  let correct = 0, total = 0;
+  document.querySelectorAll('.cell input').forEach(inp => {
+    let r = +inp.dataset.row, c = +inp.dataset.col;
+    let cell = inp.parentElement;
+    cell.classList.remove('correct', 'wrong');
+    total++;
+    if (inp.value.toUpperCase() === g[r][c]) {
+      correct++;
+      cell.classList.add('correct');
+    } else {
+      cell.classList.add('wrong');
+    }
+  });
+
+  attempts++;
+  if (correct === total) {
+    let elapsed = (Date.now() - startTime) / 1000;
+    let timeBonus = Math.max(0, 300 - Math.floor(elapsed));
+    let accuracyBonus = Math.max(0, 200 - (attempts - 1) * 50);
+    let puzzleScore = 100 + timeBonus + accuracyBonus;
+    totalScore += puzzleScore;
+    document.getElementById('scoreText').textContent = totalScore;
+
+    currentPuzzle++;
+    if (currentPuzzle >= puzzles.length) {
+      setTimeout(() => endGame(), 600);
+    } else {
+      setTimeout(() => {
+        attempts = 0;
+        startTime = Date.now();
+        loadPuzzle();
+      }, 800);
+    }
+  }
+}
+
+function loadPuzzle() {
+  document.getElementById('puzzleNum').textContent = currentPuzzle + 1;
+  buildGrid(puzzles[currentPuzzle]);
+  buildClues(puzzles[currentPuzzle]);
+}
+
+function startTimer() {
+  timerInterval = setInterval(() => {
+    let s = Math.floor((Date.now() - startTime) / 1000);
+    let m = Math.floor(s / 60);
+    document.getElementById('timer').textContent = m + ':' + String(s % 60).padStart(2, '0');
+  }, 500);
+}
+
+async function endGame() {
+  clearInterval(timerInterval);
+  document.getElementById('gameArea').classList.add('hidden');
+  document.getElementById('finalScore').textContent = totalScore;
+  let msg = totalScore > 2000 ? 'Crossword genius!' : totalScore > 1000 ? 'Great words!' : 'Nice effort!';
+  document.getElementById('gameOverMsg').textContent = msg;
+  document.getElementById('gameOverScreen').classList.remove('hidden');
+  try { await PlayFunClient.submitScore(totalScore); } catch(e) {}
+}
+
+function startGame() {
+  currentPuzzle = 0;
+  totalScore = 0;
+  attempts = 0;
+  startTime = Date.now();
+  document.getElementById('scoreText').textContent = '0';
+  document.getElementById('startScreen').classList.add('hidden');
+  document.getElementById('gameOverScreen').classList.add('hidden');
+  document.getElementById('gameArea').classList.remove('hidden');
+  loadPuzzle();
+  startTimer();
+}
+
+document.getElementById('startBtn').addEventListener('click', startGame);
+document.getElementById('restartBtn').addEventListener('click', startGame);
+document.getElementById('checkBtn').addEventListener('click', checkPuzzle);
+</script>
+</body>
+</html>

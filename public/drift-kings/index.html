@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="x-ogp-key" content="fa29b0ef-94e6-4a82-b20f-08336b32c6c8">
+<title>Drift Kings - Racing</title>
+<script src="https://sdk.play.fun"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0a0a1a; overflow: hidden; font-family: 'Segoe UI', system-ui, sans-serif; }
+  canvas { display: block; }
+  #ui { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 10; }
+  #score-hud { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); text-align: center; }
+  #score-hud .score { font-size: 2em; color: #00f5d4; font-weight: bold; text-shadow: 0 0 10px rgba(0,245,212,0.5); }
+  #score-hud .speed { color: #888; font-size: 1em; }
+  .overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; background: rgba(10,10,26,0.9); pointer-events: all; }
+  .overlay-box { text-align: center; padding: 40px; }
+  .overlay-box h1 { color: #00f5d4; font-size: 2.5em; }
+  .overlay-box h2 { color: #fff; font-size: 2em; }
+  .overlay-box p { color: #888; margin: 8px 0; }
+  .big-score { color: #00f5d4; font-size: 3em; font-weight: bold; }
+  .btn { padding: 14px 50px; font-size: 1.1em; font-weight: bold; border: none; border-radius: 8px; cursor: pointer; background: linear-gradient(135deg, #7b2ff7, #00f5d4); color: #fff; margin-top: 15px; pointer-events: all; }
+  .back-link { position: absolute; top: 20px; right: 20px; color: #555; text-decoration: none; font-size: 14px; pointer-events: all; }
+  .back-link:hover { color: #00f5d4; }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<div id="ui">
+  <div id="score-hud">
+    <div class="score" id="score">0</div>
+    <div class="speed" id="speed">0 km/h</div>
+  </div>
+  <a href="/" class="back-link">Back to Hub</a>
+  <div class="overlay" id="start-screen">
+    <div class="overlay-box">
+      <h1>Drift Kings</h1>
+      <p>Arrow keys or touch to steer. Avoid traffic!</p>
+      <button class="btn" onclick="startGame()">RACE</button>
+    </div>
+  </div>
+  <div class="overlay" id="end-screen" style="display:none;">
+    <div class="overlay-box">
+      <h2>Crashed!</h2>
+      <div class="big-score" id="final-score">0</div>
+      <p>Distance traveled</p>
+      <p>Best: <span id="best">0</span></p>
+      <button class="btn" onclick="startGame()">RACE AGAIN</button>
+    </div>
+  </div>
+</div>
+<script src="/shared/game-client.js"></script>
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+let W, H;
+function resize() { W = canvas.width = window.innerWidth; H = canvas.height = window.innerHeight; }
+resize();
+window.addEventListener('resize', resize);
+
+let player, traffic, roadMarkers, score, speed, gameRunning, bestScore;
+bestScore = parseInt(localStorage.getItem('drift-kings-best') || '0');
+
+const LANE_COUNT = 4;
+const CAR_W = 40, CAR_H = 70;
+
+function getLaneX(lane) {
+  const roadW = Math.min(W * 0.6, 400);
+  const roadL = (W - roadW) / 2;
+  const laneW = roadW / LANE_COUNT;
+  return roadL + laneW * lane + laneW / 2 - CAR_W / 2;
+}
+
+function init() {
+  player = { lane: 1, x: getLaneX(1), targetX: getLaneX(1), y: H - 150 };
+  traffic = [];
+  roadMarkers = [];
+  for (let i = 0; i < 20; i++) roadMarkers.push({ y: i * 60 });
+  score = 0;
+  speed = 4;
+}
+
+function startGame() {
+  document.getElementById('start-screen').style.display = 'none';
+  document.getElementById('end-screen').style.display = 'none';
+  init();
+  gameRunning = true;
+  requestAnimationFrame(loop);
+}
+
+function spawnTraffic() {
+  const lane = Math.floor(Math.random() * LANE_COUNT);
+  // Don't spawn on top of existing traffic
+  const tooClose = traffic.some(t => t.lane === lane && t.y < -CAR_H);
+  if (tooClose) return;
+  const colors = ['#ff2770', '#f5d400', '#2196f3', '#ff6b35', '#e91e63'];
+  traffic.push({
+    lane, x: getLaneX(lane), y: -CAR_H,
+    color: colors[Math.floor(Math.random() * colors.length)],
+    speed: 1 + Math.random() * 2,
+  });
+}
+
+let keys = {};
+window.addEventListener('keydown', e => { keys[e.key] = true; });
+window.addEventListener('keyup', e => { keys[e.key] = false; });
+
+// Touch controls
+let touchStartX = 0;
+canvas.addEventListener('touchstart', e => { touchStartX = e.touches[0].clientX; });
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  const dx = e.touches[0].clientX - touchStartX;
+  if (dx > 30 && player.lane < LANE_COUNT - 1) { player.lane++; player.targetX = getLaneX(player.lane); touchStartX = e.touches[0].clientX; }
+  if (dx < -30 && player.lane > 0) { player.lane--; player.targetX = getLaneX(player.lane); touchStartX = e.touches[0].clientX; }
+});
+
+let spawnTimer = 0;
+function update() {
+  // Input
+  if (keys['ArrowLeft'] || keys['a']) {
+    if (player.lane > 0) { player.lane--; player.targetX = getLaneX(player.lane); keys['ArrowLeft'] = false; keys['a'] = false; }
+  }
+  if (keys['ArrowRight'] || keys['d']) {
+    if (player.lane < LANE_COUNT - 1) { player.lane++; player.targetX = getLaneX(player.lane); keys['ArrowRight'] = false; keys['d'] = false; }
+  }
+
+  // Smooth lane change
+  player.x += (player.targetX - player.x) * 0.15;
+
+  // Speed increases
+  speed = 4 + score * 0.005;
+
+  // Road markers
+  roadMarkers.forEach(m => { m.y += speed; if (m.y > H) m.y -= 20 * 60; });
+
+  // Spawn traffic
+  spawnTimer += speed;
+  if (spawnTimer > 80) { spawnTraffic(); spawnTimer = 0; }
+
+  // Update traffic
+  for (let i = traffic.length - 1; i >= 0; i--) {
+    const t = traffic[i];
+    t.y += speed - t.speed;
+    t.x = getLaneX(t.lane); // Keep in lane
+
+    if (t.y > H + 100) { traffic.splice(i, 1); continue; }
+
+    // Collision
+    if (t.y + CAR_H > player.y && t.y < player.y + CAR_H &&
+        Math.abs(t.x - player.x) < CAR_W * 0.8) {
+      gameOver();
+      return;
+    }
+  }
+
+  score += Math.floor(speed * 0.5);
+  document.getElementById('score').textContent = score;
+  document.getElementById('speed').textContent = Math.floor(speed * 20) + ' km/h';
+}
+
+function draw() {
+  // Background
+  ctx.fillStyle = '#0a0a1a';
+  ctx.fillRect(0, 0, W, H);
+
+  const roadW = Math.min(W * 0.6, 400);
+  const roadL = (W - roadW) / 2;
+
+  // Road
+  ctx.fillStyle = '#1a1a2a';
+  ctx.fillRect(roadL, 0, roadW, H);
+
+  // Road edges
+  ctx.strokeStyle = '#7b2ff7';
+  ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(roadL, 0); ctx.lineTo(roadL, H); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(roadL + roadW, 0); ctx.lineTo(roadL + roadW, H); ctx.stroke();
+
+  // Lane markers
+  const laneW = roadW / LANE_COUNT;
+  ctx.setLineDash([30, 30]);
+  ctx.strokeStyle = '#2a2a4a';
+  ctx.lineWidth = 2;
+  for (let i = 1; i < LANE_COUNT; i++) {
+    const x = roadL + laneW * i;
+    roadMarkers.forEach(m => {
+      ctx.beginPath();
+      ctx.moveTo(x, m.y);
+      ctx.lineTo(x, m.y + 20);
+      ctx.stroke();
+    });
+  }
+  ctx.setLineDash([]);
+
+  // Traffic
+  traffic.forEach(t => {
+    ctx.shadowColor = t.color;
+    ctx.shadowBlur = 10;
+    ctx.fillStyle = t.color;
+    roundRect(ctx, t.x, t.y, CAR_W, CAR_H, 6);
+    ctx.fill();
+    // Windshield
+    ctx.fillStyle = 'rgba(0,0,0,0.4)';
+    ctx.fillRect(t.x + 6, t.y + 8, CAR_W - 12, 15);
+    ctx.shadowBlur = 0;
+  });
+
+  // Player car
+  ctx.shadowColor = '#00f5d4';
+  ctx.shadowBlur = 15;
+  ctx.fillStyle = '#00f5d4';
+  roundRect(ctx, player.x, player.y, CAR_W, CAR_H, 6);
+  ctx.fill();
+  ctx.fillStyle = 'rgba(0,0,0,0.4)';
+  ctx.fillRect(player.x + 6, player.y + 8, CAR_W - 12, 15);
+  // Taillights
+  ctx.fillStyle = '#ff2770';
+  ctx.fillRect(player.x + 4, player.y + CAR_H - 8, 8, 5);
+  ctx.fillRect(player.x + CAR_W - 12, player.y + CAR_H - 8, 8, 5);
+  ctx.shadowBlur = 0;
+}
+
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+function loop() {
+  if (!gameRunning) return;
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+
+async function gameOver() {
+  gameRunning = false;
+  if (score > bestScore) { bestScore = score; localStorage.setItem('drift-kings-best', bestScore); }
+  document.getElementById('final-score').textContent = score;
+  document.getElementById('best').textContent = bestScore;
+  document.getElementById('end-screen').style.display = 'flex';
+  await PlayFunClient.submitScore(score);
+}
+
+PlayFunClient.init('drift-kings', 'GAME_ID_HERE');
+</script>
+</body>
+</html>

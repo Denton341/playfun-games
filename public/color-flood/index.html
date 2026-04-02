@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="x-ogp-key" content="fa29b0ef-94e6-4a82-b20f-08336b32c6c8">
+<title>Color Flood - Puzzle</title>
+<script src="https://sdk.play.fun"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0a0a1a; color: #fff; font-family: 'Segoe UI', system-ui, sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+  .game-wrap { text-align: center; }
+  canvas { border: 2px solid #2a2a4a; border-radius: 8px; }
+  #hud { display: flex; justify-content: space-between; width: 350px; margin-bottom: 10px; }
+  .hud-item .label { color: #888; font-size: 12px; text-transform: uppercase; }
+  .hud-item .value { color: #00f5d4; font-size: 1.8em; font-weight: bold; }
+  #color-buttons { display: flex; gap: 8px; justify-content: center; margin-top: 15px; }
+  .color-btn { width: 50px; height: 50px; border: 3px solid transparent; border-radius: 12px; cursor: pointer; transition: all 0.2s; }
+  .color-btn:hover { transform: scale(1.15); }
+  .color-btn.active { border-color: #fff; transform: scale(1.15); }
+  .overlay { position: fixed; top:0; left:0; width:100%; height:100%; background: rgba(10,10,26,0.95); display: flex; align-items:center; justify-content:center; z-index:10; }
+  .overlay-box { text-align: center; padding: 40px; }
+  .overlay-box h1 { color: #00f5d4; font-size: 2.5em; }
+  .overlay-box h2 { font-size: 2em; }
+  .overlay-box p { color: #888; margin: 8px 0; }
+  .big-score { color: #00f5d4; font-size: 3em; font-weight: bold; }
+  .btn { padding: 14px 50px; font-size: 1.1em; font-weight: bold; border: none; border-radius: 8px; cursor: pointer; background: linear-gradient(135deg, #7b2ff7, #00f5d4); color: #fff; margin-top: 15px; }
+  .back-link { position: fixed; top: 20px; right: 20px; color: #555; text-decoration: none; font-size: 14px; z-index: 20; }
+</style>
+</head>
+<body>
+<a href="/" class="back-link">Back to Hub</a>
+<div class="game-wrap">
+  <div id="hud">
+    <div class="hud-item"><div class="label">Moves</div><div class="value" id="moves">0</div></div>
+    <div class="hud-item"><div class="label">Flooded</div><div class="value" id="flooded">0%</div></div>
+    <div class="hud-item"><div class="label">Max</div><div class="value" id="max-moves">25</div></div>
+  </div>
+  <canvas id="game" width="350" height="350"></canvas>
+  <div id="color-buttons"></div>
+</div>
+<div class="overlay" id="start-overlay">
+  <div class="overlay-box">
+    <h1>Color Flood</h1>
+    <p>Flood the board with one color in limited moves!</p>
+    <p style="color:#555;">Start from top-left. Pick colors to expand your territory.</p>
+    <button class="btn" onclick="startGame()">PLAY</button>
+  </div>
+</div>
+<div class="overlay" id="end-overlay" style="display:none;">
+  <div class="overlay-box">
+    <h2 id="end-title">Complete!</h2>
+    <div class="big-score" id="final-score">0</div>
+    <p id="end-msg"></p>
+    <button class="btn" onclick="startGame()">PLAY AGAIN</button>
+  </div>
+</div>
+<script src="/shared/game-client.js"></script>
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const SIZE = 14, CELL = 25;
+const COLORS = ['#ff2770','#00f5d4','#7b2ff7','#f5d400','#2196f3','#4caf50'];
+const MAX_MOVES = 25;
+
+let board, moves, flooded, gameActive;
+
+function createBoard() {
+  board = Array.from({length: SIZE}, () =>
+    Array.from({length: SIZE}, () => Math.floor(Math.random() * COLORS.length))
+  );
+}
+
+function startGame() {
+  document.getElementById('start-overlay').style.display = 'none';
+  document.getElementById('end-overlay').style.display = 'none';
+  createBoard();
+  moves = 0; gameActive = true;
+  renderColorButtons();
+  updateHUD();
+  draw();
+}
+
+function renderColorButtons() {
+  const container = document.getElementById('color-buttons');
+  container.innerHTML = '';
+  COLORS.forEach((color, i) => {
+    const btn = document.createElement('div');
+    btn.className = 'color-btn';
+    btn.style.background = color;
+    btn.onclick = () => flood(i);
+    container.appendChild(btn);
+  });
+}
+
+function flood(colorIdx) {
+  if (!gameActive) return;
+  const oldColor = board[0][0];
+  if (oldColor === colorIdx) return;
+
+  moves++;
+  // BFS flood fill from top-left
+  const visited = Array.from({length: SIZE}, () => Array(SIZE).fill(false));
+  const queue = [[0, 0]];
+  visited[0][0] = true;
+
+  while (queue.length > 0) {
+    const [r, c] = queue.shift();
+    board[r][c] = colorIdx;
+    const dirs = [[0,1],[0,-1],[1,0],[-1,0]];
+    for (const [dr, dc] of dirs) {
+      const nr = r + dr, nc = c + dc;
+      if (nr >= 0 && nr < SIZE && nc >= 0 && nc < SIZE && !visited[nr][nc]) {
+        if (board[nr][nc] === oldColor || board[nr][nc] === colorIdx) {
+          visited[nr][nc] = true;
+          queue.push([nr, nc]);
+        }
+      }
+    }
+  }
+
+  updateHUD();
+  draw();
+  checkWin();
+}
+
+function countFlooded() {
+  const target = board[0][0];
+  const visited = Array.from({length: SIZE}, () => Array(SIZE).fill(false));
+  const queue = [[0, 0]];
+  visited[0][0] = true;
+  let count = 0;
+
+  while (queue.length > 0) {
+    const [r, c] = queue.shift();
+    if (board[r][c] !== target) continue;
+    count++;
+    const dirs = [[0,1],[0,-1],[1,0],[-1,0]];
+    for (const [dr, dc] of dirs) {
+      const nr = r + dr, nc = c + dc;
+      if (nr >= 0 && nr < SIZE && nc >= 0 && nc < SIZE && !visited[nr][nc]) {
+        visited[nr][nc] = true;
+        queue.push([nr, nc]);
+      }
+    }
+  }
+  return count;
+}
+
+function updateHUD() {
+  flooded = countFlooded();
+  const pct = Math.floor(flooded / (SIZE * SIZE) * 100);
+  document.getElementById('moves').textContent = moves;
+  document.getElementById('flooded').textContent = pct + '%';
+}
+
+async function checkWin() {
+  const total = SIZE * SIZE;
+  if (flooded === total) {
+    gameActive = false;
+    const score = Math.max(0, (MAX_MOVES - moves) * 100 + 500);
+    document.getElementById('end-title').textContent = 'You Win!';
+    document.getElementById('final-score').textContent = score;
+    document.getElementById('end-msg').textContent = `Completed in ${moves} moves`;
+    document.getElementById('end-overlay').style.display = 'flex';
+    await PlayFunClient.submitScore(score);
+  } else if (moves >= MAX_MOVES) {
+    gameActive = false;
+    const pct = Math.floor(flooded / total * 100);
+    const score = pct * 5;
+    document.getElementById('end-title').textContent = 'Out of Moves!';
+    document.getElementById('final-score').textContent = score;
+    document.getElementById('end-msg').textContent = `${pct}% flooded`;
+    document.getElementById('end-overlay').style.display = 'flex';
+    await PlayFunClient.submitScore(score);
+  }
+}
+
+function draw() {
+  ctx.fillStyle = '#0a0a1a';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  for (let r = 0; r < SIZE; r++)
+    for (let c = 0; c < SIZE; c++) {
+      ctx.fillStyle = COLORS[board[r][c]];
+      ctx.fillRect(c * CELL, r * CELL, CELL - 1, CELL - 1);
+    }
+}
+
+PlayFunClient.init('color-flood', 'GAME_ID_HERE');
+</script>
+</body>
+</html>

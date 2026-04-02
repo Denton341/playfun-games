@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="x-ogp-key" content="fa29b0ef-94e6-4a82-b20f-08336b32c6c8">
+<title>Sky Dash - Infinite Runner</title>
+<script src="https://sdk.play.fun"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0a0a1a; overflow: hidden; font-family: 'Segoe UI', system-ui, sans-serif; }
+  canvas { display: block; }
+  #ui-overlay {
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    pointer-events: none; z-index: 10;
+  }
+  #score-display {
+    position: absolute; top: 20px; left: 20px;
+    font-size: 24px; color: #00f5d4; font-weight: bold;
+    text-shadow: 0 0 10px rgba(0,245,212,0.5);
+  }
+  #game-over {
+    display: none; background: rgba(10,10,26,0.95); padding: 40px; border-radius: 16px;
+    border: 1px solid #7b2ff7; text-align: center; pointer-events: all;
+  }
+  #game-over h2 { color: #fff; font-size: 2em; margin-bottom: 10px; }
+  #game-over .final-score { color: #00f5d4; font-size: 3em; font-weight: bold; }
+  #game-over .high-score { color: #888; margin: 10px 0 20px; }
+  .btn {
+    padding: 12px 40px; font-size: 1.1em; font-weight: bold; border: none;
+    border-radius: 8px; cursor: pointer; background: linear-gradient(135deg, #7b2ff7, #00f5d4);
+    color: #fff; transition: transform 0.2s;
+  }
+  .btn:hover { transform: scale(1.05); }
+  #start-screen {
+    background: rgba(10,10,26,0.95); padding: 40px; border-radius: 16px;
+    border: 1px solid #7b2ff7; text-align: center; pointer-events: all;
+  }
+  #start-screen h1 { color: #00f5d4; font-size: 2.5em; margin-bottom: 10px; }
+  #start-screen p { color: #888; margin-bottom: 20px; }
+  .back-link { position: absolute; top: 20px; right: 20px; color: #555; text-decoration: none; font-size: 14px; pointer-events: all; }
+  .back-link:hover { color: #00f5d4; }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<div id="ui-overlay">
+  <div id="score-display">0</div>
+  <a href="/" class="back-link">Back to Hub</a>
+  <div id="start-screen">
+    <h1>Sky Dash</h1>
+    <p>Tap or press Space to jump. Avoid obstacles!</p>
+    <button class="btn" onclick="startGame()">START</button>
+  </div>
+  <div id="game-over">
+    <h2>Game Over</h2>
+    <div class="final-score" id="final-score">0</div>
+    <div class="high-score" id="high-score">Best: 0</div>
+    <button class="btn" onclick="startGame()">PLAY AGAIN</button>
+  </div>
+</div>
+<script src="/shared/game-client.js"></script>
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// Game state
+let player, obstacles, particles, score, speed, gameRunning, highScore, stars;
+highScore = parseInt(localStorage.getItem('sky-dash-high') || '0');
+
+function init() {
+  player = { x: 100, y: H - 150, w: 30, h: 30, vy: 0, onGround: true, trail: [] };
+  obstacles = [];
+  particles = [];
+  score = 0;
+  speed = 5;
+  stars = Array.from({length: 80}, () => ({
+    x: Math.random() * W, y: Math.random() * H,
+    size: Math.random() * 2 + 0.5, speed: Math.random() * 0.5 + 0.2
+  }));
+}
+
+const GRAVITY = 0.6;
+const JUMP_FORCE = -13;
+const GROUND_Y_OFFSET = 100;
+
+function startGame() {
+  document.getElementById('start-screen').style.display = 'none';
+  document.getElementById('game-over').style.display = 'none';
+  init();
+  gameRunning = true;
+  requestAnimationFrame(loop);
+}
+
+function jump() {
+  if (!gameRunning) return;
+  if (player.onGround) {
+    player.vy = JUMP_FORCE;
+    player.onGround = false;
+  }
+}
+
+// Input
+window.addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); jump(); } });
+canvas.addEventListener('touchstart', e => { e.preventDefault(); jump(); });
+canvas.addEventListener('mousedown', jump);
+
+let lastObstacle = 0;
+function spawnObstacle() {
+  const groundY = H - GROUND_Y_OFFSET;
+  const types = [
+    { w: 30, h: 50 + Math.random() * 40 },
+    { w: 50, h: 30 },
+    { w: 20, h: 70 + Math.random() * 30 },
+  ];
+  const t = types[Math.floor(Math.random() * types.length)];
+  obstacles.push({ x: W + 50, y: groundY - t.h, w: t.w, h: t.h, passed: false });
+}
+
+function spawnParticles(x, y, color, count) {
+  for (let i = 0; i < count; i++) {
+    particles.push({
+      x, y, vx: (Math.random() - 0.5) * 6, vy: (Math.random() - 0.5) * 6,
+      life: 1, color, size: Math.random() * 4 + 2
+    });
+  }
+}
+
+function update() {
+  const groundY = H - GROUND_Y_OFFSET;
+
+  // Player physics
+  player.vy += GRAVITY;
+  player.y += player.vy;
+  if (player.y + player.h >= groundY) {
+    player.y = groundY - player.h;
+    player.vy = 0;
+    player.onGround = true;
+  }
+
+  // Trail
+  player.trail.push({ x: player.x, y: player.y + player.h / 2 });
+  if (player.trail.length > 15) player.trail.shift();
+
+  // Speed increases over time
+  speed = 5 + score * 0.01;
+
+  // Spawn obstacles
+  lastObstacle += speed;
+  if (lastObstacle > 250 + Math.random() * 150) {
+    spawnObstacle();
+    lastObstacle = 0;
+  }
+
+  // Update obstacles
+  for (let i = obstacles.length - 1; i >= 0; i--) {
+    const o = obstacles[i];
+    o.x -= speed;
+    if (o.x + o.w < 0) { obstacles.splice(i, 1); continue; }
+
+    // Score
+    if (!o.passed && o.x + o.w < player.x) {
+      o.passed = true;
+      score++;
+      document.getElementById('score-display').textContent = score;
+      spawnParticles(player.x + player.w, player.y, '#00f5d4', 5);
+    }
+
+    // Collision
+    if (player.x < o.x + o.w && player.x + player.w > o.x &&
+        player.y < o.y + o.h && player.y + player.h > o.y) {
+      gameOver();
+      return;
+    }
+  }
+
+  // Stars
+  stars.forEach(s => { s.x -= s.speed * speed * 0.3; if (s.x < 0) s.x = W; });
+
+  // Particles
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx; p.y += p.vy; p.life -= 0.03;
+    if (p.life <= 0) particles.splice(i, 1);
+  }
+}
+
+function draw() {
+  // Sky gradient
+  const grad = ctx.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0, '#0a0a2e');
+  grad.addColorStop(1, '#1a0a3e');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+
+  const groundY = H - GROUND_Y_OFFSET;
+
+  // Stars
+  stars.forEach(s => {
+    ctx.fillStyle = `rgba(255,255,255,${0.3 + s.size * 0.2})`;
+    ctx.fillRect(s.x, s.y, s.size, s.size);
+  });
+
+  // Ground
+  ctx.fillStyle = '#1a1a3a';
+  ctx.fillRect(0, groundY, W, GROUND_Y_OFFSET);
+  ctx.strokeStyle = '#7b2ff7';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(0, groundY);
+  ctx.lineTo(W, groundY);
+  ctx.stroke();
+
+  // Player trail
+  player.trail.forEach((t, i) => {
+    const alpha = i / player.trail.length * 0.4;
+    ctx.fillStyle = `rgba(0,245,212,${alpha})`;
+    ctx.fillRect(t.x - 2, t.y - 2, 4, 4);
+  });
+
+  // Player (glowing square)
+  ctx.shadowColor = '#00f5d4';
+  ctx.shadowBlur = 15;
+  ctx.fillStyle = '#00f5d4';
+  ctx.fillRect(player.x, player.y, player.w, player.h);
+  ctx.shadowBlur = 0;
+
+  // Obstacles
+  obstacles.forEach(o => {
+    ctx.shadowColor = '#ff2770';
+    ctx.shadowBlur = 10;
+    ctx.fillStyle = '#ff2770';
+    ctx.fillRect(o.x, o.y, o.w, o.h);
+    ctx.shadowBlur = 0;
+  });
+
+  // Particles
+  particles.forEach(p => {
+    ctx.globalAlpha = p.life;
+    ctx.fillStyle = p.color;
+    ctx.fillRect(p.x, p.y, p.size, p.size);
+    ctx.globalAlpha = 1;
+  });
+}
+
+function loop() {
+  if (!gameRunning) return;
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+
+async function gameOver() {
+  gameRunning = false;
+  spawnParticles(player.x, player.y, '#ff2770', 20);
+  draw(); // Final frame with particles
+
+  if (score > highScore) {
+    highScore = score;
+    localStorage.setItem('sky-dash-high', highScore);
+  }
+
+  document.getElementById('final-score').textContent = score;
+  document.getElementById('high-score').textContent = `Best: ${highScore}`;
+  document.getElementById('game-over').style.display = 'block';
+
+  // Submit to Play.fun via server
+  await PlayFunClient.submitScore(score);
+}
+
+// Init Play.fun client
+PlayFunClient.init('sky-dash', 'GAME_ID_HERE');
+</script>
+</body>
+</html>

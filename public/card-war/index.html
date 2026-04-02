@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="x-ogp-key" content="fa29b0ef-94e6-4a82-b20f-08336b32c6c8">
+<title>Card War - Battle</title>
+<script src="https://sdk.play.fun"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0a0a1a; color: #fff; font-family: 'Segoe UI', system-ui, sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+  .container { text-align: center; max-width: 500px; width: 100%; padding: 20px; }
+  #hud { display: flex; justify-content: space-between; margin-bottom: 20px; }
+  .hud-item .label { color: #888; font-size: 12px; text-transform: uppercase; }
+  .hud-item .value { color: #00f5d4; font-size: 1.5em; font-weight: bold; }
+  .battle-area { display: flex; justify-content: center; gap: 40px; align-items: center; margin: 30px 0; }
+  .card {
+    width: 120px; height: 170px; border-radius: 12px; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; font-size: 2em; font-weight: bold;
+    border: 3px solid #2a2a4a; transition: all 0.3s; position: relative;
+  }
+  .card.player { background: #14141f; border-color: #00f5d4; }
+  .card.enemy { background: #14141f; border-color: #ff2770; }
+  .card.face-down { background: #2a2a4a; border-color: #555; }
+  .card .power { font-size: 1.8em; }
+  .card .type { font-size: 0.5em; color: #888; text-transform: uppercase; letter-spacing: 1px; margin-top: 5px; }
+  .card .element { font-size: 1.5em; margin-bottom: 5px; }
+  .vs { font-size: 2em; color: #555; font-weight: bold; }
+  #result { font-size: 1.5em; font-weight: bold; min-height: 40px; margin: 10px 0; }
+  .hand { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin: 20px 0; }
+  .hand-card {
+    width: 80px; height: 110px; border-radius: 8px; background: #14141f; border: 2px solid #2a2a4a;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    cursor: pointer; transition: all 0.2s; font-weight: bold;
+  }
+  .hand-card:hover { border-color: #7b2ff7; transform: translateY(-5px); }
+  .hand-card .h-element { font-size: 1.5em; }
+  .hand-card .h-power { font-size: 1.2em; color: #00f5d4; }
+  .hand-card .h-type { font-size: 0.6em; color: #888; }
+  .hp-bar { width: 100%; height: 8px; background: #1a1a2a; border-radius: 4px; margin: 5px 0; }
+  .hp-fill { height: 100%; border-radius: 4px; transition: width 0.3s; }
+  .hp-fill.player { background: #00f5d4; }
+  .hp-fill.enemy { background: #ff2770; }
+  .overlay { position: fixed; top:0; left:0; width:100%; height:100%; background:rgba(10,10,26,0.95); display:flex; align-items:center; justify-content:center; z-index:10; }
+  .overlay-box { text-align: center; padding: 40px; }
+  .overlay-box h1 { color: #00f5d4; font-size: 2.5em; }
+  .overlay-box h2 { font-size: 2em; }
+  .overlay-box p { color: #888; margin: 8px 0; }
+  .big-score { color: #00f5d4; font-size: 3em; font-weight: bold; }
+  .btn { padding: 14px 50px; font-size: 1.1em; font-weight: bold; border: none; border-radius: 8px; cursor: pointer; background: linear-gradient(135deg, #7b2ff7, #00f5d4); color: #fff; margin-top: 15px; }
+  .back-link { position: fixed; top: 20px; right: 20px; color: #555; text-decoration: none; font-size: 14px; z-index: 20; }
+</style>
+</head>
+<body>
+<a href="/" class="back-link">Back to Hub</a>
+<div class="container" id="game-screen" style="display:none;">
+  <div id="hud">
+    <div class="hud-item"><div class="label">Score</div><div class="value" id="score">0</div></div>
+    <div class="hud-item"><div class="label">Round</div><div class="value" id="round">1</div></div>
+    <div class="hud-item"><div class="label">Wins</div><div class="value" id="wins">0</div></div>
+  </div>
+  <div>
+    <span style="color:#888;">Enemy HP</span>
+    <div class="hp-bar"><div class="hp-fill enemy" id="enemy-hp" style="width:100%;"></div></div>
+  </div>
+  <div class="battle-area">
+    <div class="card player" id="player-card">
+      <div class="element" id="p-elem">?</div>
+      <div class="power" id="p-power">?</div>
+      <div class="type" id="p-type">Choose</div>
+    </div>
+    <div class="vs">VS</div>
+    <div class="card enemy face-down" id="enemy-card">
+      <div class="element" id="e-elem">?</div>
+      <div class="power" id="e-power">?</div>
+      <div class="type" id="e-type">???</div>
+    </div>
+  </div>
+  <div id="result">&nbsp;</div>
+  <div>
+    <span style="color:#888;">Your HP</span>
+    <div class="hp-bar"><div class="hp-fill player" id="player-hp" style="width:100%;"></div></div>
+  </div>
+  <div style="color:#888; font-size:12px; margin-top:15px;">Pick a card from your hand:</div>
+  <div class="hand" id="hand"></div>
+</div>
+<div class="overlay" id="start-overlay">
+  <div class="overlay-box">
+    <h1>Card War</h1>
+    <p>Play cards to battle! Elements have strengths and weaknesses.</p>
+    <p style="color:#555;">Fire > Wind > Earth > Water > Fire</p>
+    <button class="btn" onclick="startGame()">BATTLE</button>
+  </div>
+</div>
+<div class="overlay" id="end-overlay" style="display:none;">
+  <div class="overlay-box">
+    <h2 id="end-title">Game Over</h2>
+    <div class="big-score" id="final-score">0</div>
+    <p>Rounds won: <span id="final-wins">0</span></p>
+    <button class="btn" onclick="startGame()">PLAY AGAIN</button>
+  </div>
+</div>
+<script src="/shared/game-client.js"></script>
+<script>
+const ELEMENTS = [
+  { name: 'Fire', emoji: '🔥', color: '#ff2770' },
+  { name: 'Water', emoji: '💧', color: '#2196f3' },
+  { name: 'Earth', emoji: '🌿', color: '#4caf50' },
+  { name: 'Wind', emoji: '💨', color: '#00f5d4' },
+];
+
+// Fire > Wind > Earth > Water > Fire
+function getAdvantage(a, b) {
+  const beats = { 0: 3, 3: 2, 2: 1, 1: 0 }; // fire>wind, wind>earth, earth>water, water>fire
+  if (beats[a] === b) return 1.5;
+  if (beats[b] === a) return 0.5;
+  return 1;
+}
+
+let hand, score, round, wins, playerHP, enemyHP, maxHP;
+
+function generateCard(minPower, maxPower) {
+  const elem = Math.floor(Math.random() * ELEMENTS.length);
+  const power = minPower + Math.floor(Math.random() * (maxPower - minPower + 1));
+  return { elem, power };
+}
+
+function drawHand() {
+  hand = [];
+  const diff = Math.min(round, 10);
+  for (let i = 0; i < 4; i++) {
+    hand.push(generateCard(3 + diff, 8 + diff * 2));
+  }
+  renderHand();
+}
+
+function renderHand() {
+  const container = document.getElementById('hand');
+  container.innerHTML = '';
+  hand.forEach((card, i) => {
+    const el = ELEMENTS[card.elem];
+    const div = document.createElement('div');
+    div.className = 'hand-card';
+    div.innerHTML = `<div class="h-element">${el.emoji}</div><div class="h-power">${card.power}</div><div class="h-type">${el.name}</div>`;
+    div.onclick = () => playCard(i);
+    container.appendChild(div);
+  });
+}
+
+function startGame() {
+  document.getElementById('start-overlay').style.display = 'none';
+  document.getElementById('end-overlay').style.display = 'none';
+  document.getElementById('game-screen').style.display = 'block';
+  score = 0; round = 1; wins = 0;
+  maxHP = 100; playerHP = maxHP; enemyHP = maxHP;
+  updateHUD();
+  drawHand();
+  resetBattleCards();
+}
+
+function updateHUD() {
+  document.getElementById('score').textContent = score;
+  document.getElementById('round').textContent = round;
+  document.getElementById('wins').textContent = wins;
+  document.getElementById('player-hp').style.width = (playerHP / maxHP * 100) + '%';
+  document.getElementById('enemy-hp').style.width = (enemyHP / maxHP * 100) + '%';
+}
+
+function resetBattleCards() {
+  document.getElementById('p-elem').textContent = '?';
+  document.getElementById('p-power').textContent = '?';
+  document.getElementById('p-type').textContent = 'Choose';
+  document.getElementById('e-elem').textContent = '?';
+  document.getElementById('e-power').textContent = '?';
+  document.getElementById('e-type').textContent = '???';
+  document.getElementById('enemy-card').classList.add('face-down');
+  document.getElementById('result').innerHTML = '&nbsp;';
+}
+
+function playCard(index) {
+  const playerCard = hand[index];
+  const diff = Math.min(round, 10);
+  const enemyCard = generateCard(2 + diff, 7 + diff * 2);
+
+  // Show player card
+  const pEl = ELEMENTS[playerCard.elem];
+  document.getElementById('p-elem').textContent = pEl.emoji;
+  document.getElementById('p-power').textContent = playerCard.power;
+  document.getElementById('p-type').textContent = pEl.name;
+
+  // Reveal enemy card
+  const eEl = ELEMENTS[enemyCard.elem];
+  document.getElementById('e-elem').textContent = eEl.emoji;
+  document.getElementById('e-power').textContent = enemyCard.power;
+  document.getElementById('e-type').textContent = eEl.name;
+  document.getElementById('enemy-card').classList.remove('face-down');
+
+  // Calculate damage
+  const multiplier = getAdvantage(playerCard.elem, enemyCard.elem);
+  const playerDmg = Math.floor(playerCard.power * multiplier);
+  const enemyDmg = Math.floor(enemyCard.power * getAdvantage(enemyCard.elem, playerCard.elem));
+
+  enemyHP = Math.max(0, enemyHP - playerDmg);
+  playerHP = Math.max(0, playerHP - enemyDmg);
+
+  // Result text
+  const result = document.getElementById('result');
+  if (playerDmg > enemyDmg) {
+    result.innerHTML = `<span style="color:#00f5d4;">You deal ${playerDmg}!</span> <span style="color:#888;">They deal ${enemyDmg}</span>`;
+    score += playerDmg * 2;
+  } else if (enemyDmg > playerDmg) {
+    result.innerHTML = `<span style="color:#ff2770;">They deal ${enemyDmg}!</span> <span style="color:#888;">You deal ${playerDmg}</span>`;
+    score += playerDmg;
+  } else {
+    result.textContent = `Draw! Both deal ${playerDmg}`;
+    score += playerDmg;
+  }
+
+  updateHUD();
+
+  // Remove played card, draw new
+  hand.splice(index, 1);
+  hand.push(generateCard(3 + diff, 8 + diff * 2));
+
+  // Check HP
+  setTimeout(() => {
+    if (enemyHP <= 0) {
+      wins++;
+      round++;
+      maxHP += 20;
+      enemyHP = maxHP;
+      playerHP = Math.min(maxHP, playerHP + 30); // Heal on win
+      score += 100;
+      updateHUD();
+      drawHand();
+      resetBattleCards();
+      document.getElementById('result').innerHTML = '<span style="color:#f5d400;">Enemy defeated! Next round!</span>';
+    } else if (playerHP <= 0) {
+      gameOver();
+    } else {
+      renderHand();
+      setTimeout(resetBattleCards, 1500);
+    }
+  }, 500);
+}
+
+async function gameOver() {
+  document.getElementById('end-title').textContent = playerHP <= 0 ? 'Defeated!' : 'Victory!';
+  document.getElementById('final-score').textContent = score;
+  document.getElementById('final-wins').textContent = wins;
+  document.getElementById('end-overlay').style.display = 'flex';
+  await PlayFunClient.submitScore(score);
+}
+
+PlayFunClient.init('card-war', 'GAME_ID_HERE');
+</script>
+</body>
+</html>

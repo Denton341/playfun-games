@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="x-ogp-key" content="fa29b0ef-94e6-4a82-b20f-08336b32c6c8">
+<title>Slot Machine</title>
+<script src="https://sdk.play.fun"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a1a; color: #fff;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    min-height: 100vh; display: flex; flex-direction: column; align-items: center;
+    overflow: hidden;
+  }
+  .hub-link {
+    position: fixed; top: 15px; right: 20px;
+    color: #00f5d4; text-decoration: none; font-size: 0.95em;
+    z-index: 100; opacity: 0.8; transition: opacity 0.2s;
+  }
+  .hub-link:hover { opacity: 1; }
+  .btn {
+    padding: 14px 50px; font-size: 1.1em; font-weight: bold;
+    border: none; border-radius: 8px; cursor: pointer;
+    background: linear-gradient(135deg, #7b2ff7, #00f5d4);
+    color: #fff; margin-top: 15px; transition: transform 0.15s, box-shadow 0.15s;
+  }
+  .btn:hover { transform: scale(1.05); box-shadow: 0 0 25px rgba(0,245,212,0.4); }
+  .btn:active { transform: scale(0.97); }
+  .overlay {
+    position: fixed; inset: 0; background: rgba(10,10,26,0.92);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    z-index: 50; backdrop-filter: blur(6px);
+  }
+  .overlay h1 { font-size: 2.8em; margin-bottom: 10px; background: linear-gradient(135deg, #7b2ff7, #00f5d4); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  .overlay p { font-size: 1.2em; color: #aaa; margin-bottom: 5px; }
+  .overlay .final-score { font-size: 3em; color: #00f5d4; margin: 10px 0; text-shadow: 0 0 20px rgba(0,245,212,0.5); }
+  .machine {
+    margin-top: 80px;
+    background: linear-gradient(180deg, #1a1a3a, #0f0f2a);
+    border: 3px solid #2a2a5a;
+    border-radius: 20px;
+    padding: 30px 25px 25px;
+    box-shadow: 0 0 40px rgba(123,47,247,0.2), inset 0 0 30px rgba(0,0,0,0.3);
+    position: relative;
+  }
+  .machine::before {
+    content: 'LUCKY SPIN';
+    position: absolute; top: -18px; left: 50%; transform: translateX(-50%);
+    background: linear-gradient(135deg, #7b2ff7, #00f5d4);
+    padding: 5px 25px; border-radius: 20px; font-weight: bold;
+    font-size: 0.9em; letter-spacing: 2px;
+  }
+  .reels {
+    display: flex; gap: 10px; margin-bottom: 20px;
+  }
+  .reel {
+    width: 90px; height: 100px;
+    background: #0a0a1a;
+    border: 2px solid #333;
+    border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 3.5em;
+    overflow: hidden;
+    position: relative;
+  }
+  .reel-inner {
+    transition: transform 0.1s;
+  }
+  .reel.spinning .reel-inner {
+    animation: reelSpin 0.1s linear infinite;
+  }
+  @keyframes reelSpin {
+    0% { transform: translateY(-10px); }
+    50% { transform: translateY(10px); }
+    100% { transform: translateY(-10px); }
+  }
+  .reel.win {
+    border-color: #00f5d4;
+    box-shadow: 0 0 20px rgba(0,245,212,0.4);
+  }
+  .coins-display {
+    text-align: center; margin-bottom: 15px;
+    font-size: 1.4em;
+  }
+  .coins-display span { color: #ffd700; font-weight: bold; }
+  .bet-info {
+    text-align: center; color: #888; font-size: 0.9em; margin-bottom: 10px;
+  }
+  #spinBtn {
+    display: block; width: 100%;
+    padding: 14px; font-size: 1.2em; font-weight: bold;
+    border: none; border-radius: 10px; cursor: pointer;
+    background: linear-gradient(135deg, #7b2ff7, #00f5d4);
+    color: #fff; transition: all 0.15s;
+  }
+  #spinBtn:hover:not(:disabled) { transform: scale(1.03); box-shadow: 0 0 25px rgba(0,245,212,0.4); }
+  #spinBtn:disabled { opacity: 0.4; cursor: not-allowed; }
+  #result {
+    text-align: center; margin-top: 15px; font-size: 1.3em;
+    font-weight: bold; min-height: 1.5em;
+  }
+  .win-text { color: #00f5d4; text-shadow: 0 0 15px rgba(0,245,212,0.5); }
+  .lose-text { color: #ff2770; }
+  @keyframes jackpot {
+    0%,100% { transform: scale(1); }
+    50% { transform: scale(1.1); }
+  }
+  .jackpot-anim { animation: jackpot 0.4s ease-in-out 3; }
+  .payouts {
+    margin-top: 20px; font-size: 0.8em; color: #555; text-align: center;
+    max-width: 300px;
+  }
+</style>
+</head>
+<body>
+<a class="hub-link" href="/">&#8592; Back to Hub</a>
+
+<div id="startScreen" class="overlay">
+  <h1>Slot Machine</h1>
+  <p>Start with 100 coins. 10 per spin.</p>
+  <p style="color:#666; font-size:0.9em;">Match symbols to win big!</p>
+  <button class="btn" onclick="startGame()">Play</button>
+</div>
+
+<div id="gameOverScreen" class="overlay" style="display:none;">
+  <h1 id="endTitle">Game Over!</h1>
+  <p>Final Coins</p>
+  <div class="final-score" id="finalScore">0</div>
+  <button class="btn" onclick="startGame()">Play Again</button>
+</div>
+
+<div class="machine" id="machine">
+  <div class="coins-display">Coins: <span id="coinsDisplay">100</span></div>
+  <div class="reels">
+    <div class="reel" id="reel0"><div class="reel-inner">?</div></div>
+    <div class="reel" id="reel1"><div class="reel-inner">?</div></div>
+    <div class="reel" id="reel2"><div class="reel-inner">?</div></div>
+  </div>
+  <div class="bet-info">Bet: 10 coins per spin</div>
+  <button id="spinBtn" onclick="spin()">SPIN</button>
+  <div id="result"></div>
+</div>
+
+<div class="payouts">
+  3 matching = 5x | 2 matching = 2x | Triple 7 = 20x
+</div>
+
+<script src="/shared/game-client.js"></script>
+<script>
+PlayFunClient.init('slot-machine', 'GAME_ID_HERE');
+
+const SYMBOLS = ['🍒', '🍋', '🔔', '💎', '⭐', '🍀', '7️⃣'];
+const reelEls = [0,1,2].map(i => document.getElementById('reel' + i));
+const coinsDisplay = document.getElementById('coinsDisplay');
+const resultEl = document.getElementById('result');
+const spinBtn = document.getElementById('spinBtn');
+const machine = document.getElementById('machine');
+
+let coins = 100, spinning = false;
+
+function getRandomSymbol() {
+  return SYMBOLS[Math.floor(Math.random() * SYMBOLS.length)];
+}
+
+async function spin() {
+  if (spinning || coins < 10) return;
+  spinning = true;
+  spinBtn.disabled = true;
+  resultEl.textContent = '';
+  reelEls.forEach(r => { r.classList.remove('win'); r.classList.add('spinning'); });
+
+  coins -= 10;
+  coinsDisplay.textContent = coins;
+
+  // Generate final results
+  const results = [getRandomSymbol(), getRandomSymbol(), getRandomSymbol()];
+
+  // Animate each reel stopping at staggered times
+  const stopDelays = [600, 1000, 1400];
+
+  for (let i = 0; i < 3; i++) {
+    // During spin, rapidly change symbols
+    const interval = setInterval(() => {
+      reelEls[i].querySelector('.reel-inner').textContent = getRandomSymbol();
+    }, 80);
+
+    await new Promise(resolve => {
+      setTimeout(() => {
+        clearInterval(interval);
+        reelEls[i].classList.remove('spinning');
+        reelEls[i].querySelector('.reel-inner').textContent = results[i];
+        resolve();
+      }, stopDelays[i]);
+    });
+  }
+
+  // Check results
+  const [a, b, c] = results;
+  let winAmount = 0;
+  let message = '';
+
+  if (a === b && b === c) {
+    if (a === '7️⃣') {
+      winAmount = 200; // 20x
+      message = 'JACKPOT! Triple 7!';
+      machine.classList.add('jackpot-anim');
+      setTimeout(() => machine.classList.remove('jackpot-anim'), 1200);
+    } else {
+      winAmount = 50; // 5x
+      message = `Triple ${a}!`;
+    }
+    reelEls.forEach(r => r.classList.add('win'));
+  } else if (a === b || b === c || a === c) {
+    winAmount = 20; // 2x
+    const match = a === b ? a : c;
+    message = `Double ${match}!`;
+    if (a === b) { reelEls[0].classList.add('win'); reelEls[1].classList.add('win'); }
+    if (b === c) { reelEls[1].classList.add('win'); reelEls[2].classList.add('win'); }
+    if (a === c && a !== b) { reelEls[0].classList.add('win'); reelEls[2].classList.add('win'); }
+  }
+
+  if (winAmount > 0) {
+    coins += winAmount;
+    coinsDisplay.textContent = coins;
+    resultEl.innerHTML = `<span class="win-text">${message} +${winAmount}</span>`;
+  } else {
+    resultEl.innerHTML = '<span class="lose-text">No match</span>';
+  }
+
+  spinning = false;
+
+  if (coins < 10) {
+    setTimeout(() => endGame(), 1000);
+  } else {
+    spinBtn.disabled = false;
+  }
+}
+
+function startGame() {
+  document.getElementById('startScreen').style.display = 'none';
+  document.getElementById('gameOverScreen').style.display = 'none';
+  coins = 100; spinning = false;
+  coinsDisplay.textContent = 100;
+  resultEl.textContent = '';
+  spinBtn.disabled = false;
+  reelEls.forEach(r => {
+    r.querySelector('.reel-inner').textContent = '?';
+    r.classList.remove('win', 'spinning');
+  });
+}
+
+async function endGame() {
+  spinBtn.disabled = true;
+  const title = document.getElementById('endTitle');
+  title.textContent = coins > 100 ? 'Winner!' : coins === 0 ? 'Busted!' : 'Game Over!';
+  document.getElementById('finalScore').textContent = coins;
+  document.getElementById('gameOverScreen').style.display = 'flex';
+  try { await PlayFunClient.submitScore(coins); } catch(e) { console.warn('Score submit failed', e); }
+}
+
+// Allow spacebar to spin
+document.addEventListener('keydown', (e) => {
+  if (e.code === 'Space' && !spinning && coins >= 10 && document.getElementById('startScreen').style.display === 'none' && document.getElementById('gameOverScreen').style.display === 'none') {
+    e.preventDefault();
+    spin();
+  }
+});
+
+// Cash out button
+const cashOutBtn = document.createElement('button');
+cashOutBtn.textContent = 'Cash Out';
+cashOutBtn.style.cssText = 'display:block;width:100%;padding:10px;font-size:1em;border:2px solid #00f5d4;border-radius:10px;cursor:pointer;background:transparent;color:#00f5d4;margin-top:8px;transition:all 0.15s;';
+cashOutBtn.addEventListener('mouseenter', () => { cashOutBtn.style.background = 'rgba(0,245,212,0.1)'; });
+cashOutBtn.addEventListener('mouseleave', () => { cashOutBtn.style.background = 'transparent'; });
+cashOutBtn.addEventListener('click', () => { if (!spinning) endGame(); });
+document.getElementById('spinBtn').after(cashOutBtn);
+</script>
+</body>
+</html>

@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="x-ogp-key" content="fa29b0ef-94e6-4a82-b20f-08336b32c6c8">
+<title>Pixel Draw - Play.fun</title>
+<script src="https://sdk.play.fun"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a1a; color: #fff;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    min-height: 100vh; display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+  }
+  .hub-link {
+    position: fixed; top: 16px; right: 20px; z-index: 1000;
+    color: #00f5d4; text-decoration: none; font-size: 0.95em;
+    opacity: 0.8; transition: opacity 0.2s;
+  }
+  .hub-link:hover { opacity: 1; }
+  .btn {
+    padding: 14px 50px; font-size: 1.1em; font-weight: bold;
+    border: none; border-radius: 8px; cursor: pointer;
+    background: linear-gradient(135deg, #7b2ff7, #00f5d4);
+    color: #fff; margin-top: 15px;
+    transition: transform 0.15s, box-shadow 0.15s;
+  }
+  .btn:hover { transform: translateY(-2px); box-shadow: 0 6px 25px rgba(123,47,247,0.5); }
+  .btn-sm {
+    padding: 10px 30px; font-size: 0.95em; font-weight: bold;
+    border: none; border-radius: 8px; cursor: pointer;
+    background: linear-gradient(135deg, #7b2ff7, #00f5d4);
+    color: #fff; transition: transform 0.15s;
+  }
+  .btn-sm:hover { transform: translateY(-1px); }
+  .overlay {
+    position: fixed; inset: 0; background: rgba(10,10,26,0.95);
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: center; z-index: 100; animation: fadeIn 0.3s ease;
+  }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  .overlay h1 {
+    font-size: 3em; margin-bottom: 10px;
+    background: linear-gradient(135deg, #7b2ff7, #00f5d4);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .overlay p { color: #aaa; font-size: 1.1em; margin-bottom: 5px; max-width: 500px; text-align: center; }
+  .overlay .score-display {
+    font-size: 2.5em; font-weight: bold; color: #00f5d4;
+    text-shadow: 0 0 20px rgba(0,245,212,0.5); margin: 15px 0;
+  }
+  .hud {
+    position: fixed; top: 16px; left: 20px; z-index: 50;
+    font-size: 1em; color: #aaa;
+  }
+  .hud span { color: #00f5d4; font-weight: bold; }
+  .game-area {
+    display: flex; gap: 40px; align-items: center;
+    flex-wrap: wrap; justify-content: center; padding: 20px;
+  }
+  .grid-section { text-align: center; }
+  .grid-section h3 { margin-bottom: 10px; color: #aaa; font-weight: 400; }
+  .pixel-grid {
+    display: grid; grid-template-columns: repeat(8, 1fr); gap: 2px;
+    border: 2px solid rgba(123,47,247,0.3); border-radius: 8px;
+    overflow: hidden; background: rgba(123,47,247,0.1);
+  }
+  .pixel-grid.target .cell { cursor: default; }
+  .cell {
+    width: 42px; height: 42px;
+    background: #1a1a3a; cursor: pointer;
+    transition: background 0.1s, box-shadow 0.1s;
+  }
+  .cell.filled { background: #00f5d4; box-shadow: inset 0 0 8px rgba(0,245,212,0.4); }
+  .cell.target-filled { background: #7b2ff7; box-shadow: inset 0 0 8px rgba(123,47,247,0.4); }
+  .cell:hover:not(.target-filled) { background: rgba(0,245,212,0.3); }
+  .controls { margin-top: 15px; display: flex; gap: 10px; justify-content: center; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<a href="/" class="hub-link">&#8592; Back to Hub</a>
+<div class="hud hidden" id="hud">
+  Pattern: <span id="hud-pattern">1</span>/<span id="hud-total">5</span> &nbsp;|&nbsp;
+  Total Score: <span id="hud-score">0</span>
+</div>
+
+<div id="start-screen" class="overlay">
+  <h1>Pixel Draw</h1>
+  <p>Replicate the target pixel art pattern on your grid!</p>
+  <p>Click cells to fill them. Accuracy = score. 5 patterns total.</p>
+  <button class="btn" id="start-btn">Start Game</button>
+</div>
+
+<div id="gameover-screen" class="overlay hidden">
+  <h1>Complete!</h1>
+  <p>All patterns done</p>
+  <div class="score-display" id="final-score">0</div>
+  <button class="btn" id="restart-btn">Play Again</button>
+</div>
+
+<div class="game-area hidden" id="game-area">
+  <div class="grid-section">
+    <h3>Target</h3>
+    <div class="pixel-grid target" id="target-grid"></div>
+  </div>
+  <div class="grid-section">
+    <h3>Your Drawing</h3>
+    <div class="pixel-grid" id="player-grid"></div>
+    <div class="controls">
+      <button class="btn-sm" id="clear-btn">Clear</button>
+      <button class="btn-sm" id="submit-btn">Submit</button>
+    </div>
+  </div>
+</div>
+
+<script src="/shared/game-client.js"></script>
+<script>
+PlayFunClient.init('pixel-draw', 'GAME_ID_HERE');
+
+// Patterns: 1 = filled, 0 = empty (8x8 grids)
+const PATTERNS = [
+  { name: 'Heart', data: [
+    0,0,0,0,0,0,0,0,
+    0,1,1,0,0,1,1,0,
+    1,1,1,1,1,1,1,1,
+    1,1,1,1,1,1,1,1,
+    1,1,1,1,1,1,1,1,
+    0,1,1,1,1,1,1,0,
+    0,0,1,1,1,1,0,0,
+    0,0,0,1,1,0,0,0,
+  ]},
+  { name: 'Star', data: [
+    0,0,0,1,1,0,0,0,
+    0,0,0,1,1,0,0,0,
+    0,1,1,1,1,1,1,0,
+    1,1,1,1,1,1,1,1,
+    0,0,1,1,1,1,0,0,
+    0,1,1,0,0,1,1,0,
+    1,1,0,0,0,0,1,1,
+    1,0,0,0,0,0,0,1,
+  ]},
+  { name: 'Arrow', data: [
+    0,0,0,1,0,0,0,0,
+    0,0,1,1,1,0,0,0,
+    0,1,0,1,0,1,0,0,
+    1,0,0,1,0,0,1,0,
+    0,0,0,1,0,0,0,0,
+    0,0,0,1,0,0,0,0,
+    0,0,0,1,0,0,0,0,
+    0,0,0,1,0,0,0,0,
+  ]},
+  { name: 'Smiley', data: [
+    0,1,1,1,1,1,1,0,
+    1,0,0,0,0,0,0,1,
+    1,0,1,0,0,1,0,1,
+    1,0,0,0,0,0,0,1,
+    1,0,1,0,0,1,0,1,
+    1,0,0,1,1,0,0,1,
+    1,0,0,0,0,0,0,1,
+    0,1,1,1,1,1,1,0,
+  ]},
+  { name: 'Diamond', data: [
+    0,0,0,1,1,0,0,0,
+    0,0,1,0,0,1,0,0,
+    0,1,0,0,0,0,1,0,
+    1,0,0,0,0,0,0,1,
+    1,0,0,0,0,0,0,1,
+    0,1,0,0,0,0,1,0,
+    0,0,1,0,0,1,0,0,
+    0,0,0,1,1,0,0,0,
+  ]},
+  { name: 'Ship', data: [
+    0,0,0,0,1,0,0,0,
+    0,0,0,1,1,0,0,0,
+    0,0,0,1,1,0,0,0,
+    0,0,1,1,1,1,0,0,
+    0,1,1,1,1,1,1,0,
+    1,1,1,1,1,1,1,1,
+    0,1,1,1,1,1,1,0,
+    0,0,1,1,1,1,0,0,
+  ]},
+  { name: 'Cross', data: [
+    0,0,1,1,1,1,0,0,
+    0,0,1,1,1,1,0,0,
+    1,1,1,1,1,1,1,1,
+    1,1,1,1,1,1,1,1,
+    1,1,1,1,1,1,1,1,
+    1,1,1,1,1,1,1,1,
+    0,0,1,1,1,1,0,0,
+    0,0,1,1,1,1,0,0,
+  ]},
+];
+
+const ROUNDS = 5;
+let currentPattern = 0;
+let playerGrid = new Array(64).fill(0);
+let totalScore = 0;
+let patternOrder = [];
+let isDrawing = false;
+let drawMode = 1;
+
+const targetGridEl = document.getElementById('target-grid');
+const playerGridEl = document.getElementById('player-grid');
+
+document.getElementById('start-btn').addEventListener('click', startGame);
+document.getElementById('restart-btn').addEventListener('click', startGame);
+document.getElementById('clear-btn').addEventListener('click', clearGrid);
+document.getElementById('submit-btn').addEventListener('click', submitPattern);
+
+function shuffle(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+function startGame() {
+  document.getElementById('start-screen').classList.add('hidden');
+  document.getElementById('gameover-screen').classList.add('hidden');
+  document.getElementById('game-area').classList.remove('hidden');
+  document.getElementById('hud').classList.remove('hidden');
+  totalScore = 0;
+  currentPattern = 0;
+  patternOrder = shuffle([...Array(PATTERNS.length).keys()]).slice(0, ROUNDS);
+  document.getElementById('hud-total').textContent = ROUNDS;
+  loadPattern();
+}
+
+function loadPattern() {
+  document.getElementById('hud-pattern').textContent = currentPattern + 1;
+  document.getElementById('hud-score').textContent = totalScore;
+  playerGrid = new Array(64).fill(0);
+  renderTarget();
+  renderPlayer();
+}
+
+function renderTarget() {
+  targetGridEl.innerHTML = '';
+  const pat = PATTERNS[patternOrder[currentPattern]];
+  for (let i = 0; i < 64; i++) {
+    const cell = document.createElement('div');
+    cell.className = 'cell' + (pat.data[i] ? ' target-filled' : '');
+    targetGridEl.appendChild(cell);
+  }
+}
+
+function renderPlayer() {
+  playerGridEl.innerHTML = '';
+  for (let i = 0; i < 64; i++) {
+    const cell = document.createElement('div');
+    cell.className = 'cell' + (playerGrid[i] ? ' filled' : '');
+    cell.dataset.index = i;
+    cell.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      isDrawing = true;
+      drawMode = playerGrid[i] ? 0 : 1;
+      playerGrid[i] = drawMode;
+      cell.classList.toggle('filled', !!drawMode);
+    });
+    cell.addEventListener('mouseenter', () => {
+      if (isDrawing) {
+        playerGrid[i] = drawMode;
+        cell.classList.toggle('filled', !!drawMode);
+      }
+    });
+    cell.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      drawMode = playerGrid[i] ? 0 : 1;
+      playerGrid[i] = drawMode;
+      cell.classList.toggle('filled', !!drawMode);
+      isDrawing = true;
+    }, { passive: false });
+    cell.addEventListener('touchmove', (e) => {
+      e.preventDefault();
+      const touch = e.touches[0];
+      const target = document.elementFromPoint(touch.clientX, touch.clientY);
+      if (target && target.dataset.index !== undefined) {
+        const idx = parseInt(target.dataset.index);
+        playerGrid[idx] = drawMode;
+        target.classList.toggle('filled', !!drawMode);
+      }
+    }, { passive: false });
+    playerGridEl.appendChild(cell);
+  }
+}
+
+document.addEventListener('mouseup', () => { isDrawing = false; });
+document.addEventListener('touchend', () => { isDrawing = false; });
+
+function clearGrid() {
+  playerGrid = new Array(64).fill(0);
+  renderPlayer();
+}
+
+function submitPattern() {
+  const pat = PATTERNS[patternOrder[currentPattern]];
+  let correct = 0;
+  for (let i = 0; i < 64; i++) {
+    if (playerGrid[i] === pat.data[i]) correct++;
+  }
+  const accuracy = (correct / 64) * 100;
+  const roundScore = Math.round(accuracy * 10);
+  totalScore += roundScore;
+
+  // Flash feedback
+  const cells = playerGridEl.querySelectorAll('.cell');
+  cells.forEach((cell, i) => {
+    if (playerGrid[i] === pat.data[i]) {
+      cell.style.boxShadow = 'inset 0 0 12px rgba(0,245,212,0.6)';
+    } else {
+      cell.style.background = '#ff2770';
+      cell.style.boxShadow = 'inset 0 0 12px rgba(255,39,112,0.6)';
+    }
+  });
+
+  setTimeout(() => {
+    currentPattern++;
+    if (currentPattern >= ROUNDS) {
+      endGame();
+    } else {
+      loadPattern();
+    }
+  }, 1200);
+}
+
+async function endGame() {
+  document.getElementById('game-area').classList.add('hidden');
+  document.getElementById('hud').classList.add('hidden');
+  document.getElementById('final-score').textContent = totalScore;
+  document.getElementById('gameover-screen').classList.remove('hidden');
+  try { await PlayFunClient.submitScore(totalScore); } catch (e) { console.error(e); }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="x-ogp-key" content="fa29b0ef-94e6-4a82-b20f-08336b32c6c8">
+<title>Maze Runner</title>
+<script src="https://sdk.play.fun"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a1a; color: #fff;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    min-height: 100vh; display: flex; flex-direction: column; align-items: center;
+    overflow: hidden;
+  }
+  .hub-link {
+    position: fixed; top: 15px; right: 20px;
+    color: #00f5d4; text-decoration: none; font-size: 0.95em;
+    z-index: 100; opacity: 0.8; transition: opacity 0.2s;
+  }
+  .hub-link:hover { opacity: 1; }
+  .btn {
+    padding: 14px 50px; font-size: 1.1em; font-weight: bold;
+    border: none; border-radius: 8px; cursor: pointer;
+    background: linear-gradient(135deg, #7b2ff7, #00f5d4);
+    color: #fff; margin-top: 15px; transition: transform 0.15s, box-shadow 0.15s;
+  }
+  .btn:hover { transform: scale(1.05); box-shadow: 0 0 25px rgba(0,245,212,0.4); }
+  .btn:active { transform: scale(0.97); }
+  .overlay {
+    position: fixed; inset: 0; background: rgba(10,10,26,0.92);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    z-index: 50; backdrop-filter: blur(6px);
+  }
+  .overlay h1 { font-size: 2.8em; margin-bottom: 10px; background: linear-gradient(135deg, #7b2ff7, #00f5d4); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  .overlay p { font-size: 1.2em; color: #aaa; margin-bottom: 5px; }
+  .overlay .final-score { font-size: 3em; color: #00f5d4; margin: 10px 0; text-shadow: 0 0 20px rgba(0,245,212,0.5); }
+  #hud {
+    display: flex; gap: 30px; font-size: 1.2em;
+    margin: 55px 0 10px; z-index: 10;
+  }
+  #hud span { color: #00f5d4; }
+  canvas { border-radius: 8px; border: 2px solid #1a1a3a; }
+  .controls-hint {
+    margin-top: 10px; color: #555; font-size: 0.85em;
+  }
+</style>
+</head>
+<body>
+<a class="hub-link" href="/">&#8592; Back to Hub</a>
+
+<div id="startScreen" class="overlay">
+  <h1>Maze Runner</h1>
+  <p>Navigate to the exit as fast as you can!</p>
+  <p style="color:#666; font-size:0.9em;">WASD or Arrow Keys to move</p>
+  <button class="btn" onclick="startGame()">Play</button>
+</div>
+
+<div id="gameOverScreen" class="overlay" style="display:none;">
+  <h1>All Mazes Complete!</h1>
+  <p>Total Score</p>
+  <div class="final-score" id="finalScore">0</div>
+  <p id="timeReport" style="color:#888;"></p>
+  <button class="btn" onclick="startGame()">Play Again</button>
+</div>
+
+<div id="levelComplete" class="overlay" style="display:none;">
+  <h1 id="levelTitle">Level Complete!</h1>
+  <p id="levelBonus"></p>
+  <button class="btn" onclick="nextLevel()">Next Level</button>
+</div>
+
+<div id="hud">
+  <div>Level: <span id="levelDisplay">1</span>/5</div>
+  <div>Time: <span id="timeDisplay">0.0</span>s</div>
+  <div>Score: <span id="scoreDisplay">0</span></div>
+</div>
+
+<canvas id="canvas"></canvas>
+<div class="controls-hint">WASD / Arrow Keys to move</div>
+
+<script src="/shared/game-client.js"></script>
+<script>
+PlayFunClient.init('maze-runner', 'GAME_ID_HERE');
+
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const SIZE = Math.min(440, window.innerWidth - 30);
+canvas.width = canvas.height = SIZE;
+
+let maze, cols, rows, cellSize, player, exitPos;
+let level = 1, maxLevel = 5, score = 0, totalTime = 0;
+let startTime, elapsed = 0, gameActive = false, animFrame;
+
+const MAZE_SIZES = [7, 9, 11, 13, 15]; // increasing difficulty
+
+function generateMaze(c, r) {
+  const grid = [];
+  for (let y = 0; y < r; y++) {
+    grid[y] = [];
+    for (let x = 0; x < c; x++) {
+      grid[y][x] = { x, y, walls: { top: true, right: true, bottom: true, left: true }, visited: false };
+    }
+  }
+  const stack = [];
+  let current = grid[0][0];
+  current.visited = true;
+  stack.push(current);
+
+  while (stack.length > 0) {
+    const neighbors = [];
+    const { x, y } = current;
+    if (y > 0 && !grid[y-1][x].visited) neighbors.push(grid[y-1][x]);
+    if (x < c-1 && !grid[y][x+1].visited) neighbors.push(grid[y][x+1]);
+    if (y < r-1 && !grid[y+1][x].visited) neighbors.push(grid[y+1][x]);
+    if (x > 0 && !grid[y][x-1].visited) neighbors.push(grid[y][x-1]);
+
+    if (neighbors.length > 0) {
+      const next = neighbors[Math.floor(Math.random() * neighbors.length)];
+      // Remove walls
+      const dx = next.x - current.x, dy = next.y - current.y;
+      if (dx === 1) { current.walls.right = false; next.walls.left = false; }
+      if (dx === -1) { current.walls.left = false; next.walls.right = false; }
+      if (dy === 1) { current.walls.bottom = false; next.walls.top = false; }
+      if (dy === -1) { current.walls.top = false; next.walls.bottom = false; }
+      next.visited = true;
+      stack.push(current);
+      current = next;
+    } else {
+      current = stack.pop();
+    }
+  }
+  return grid;
+}
+
+function initLevel() {
+  const dim = MAZE_SIZES[level - 1];
+  cols = rows = dim;
+  cellSize = SIZE / dim;
+  maze = generateMaze(cols, rows);
+  player = { x: 0, y: 0 };
+  exitPos = { x: cols - 1, y: rows - 1 };
+  startTime = performance.now();
+  elapsed = 0;
+  document.getElementById('levelDisplay').textContent = level;
+}
+
+function drawMaze() {
+  ctx.clearRect(0, 0, SIZE, SIZE);
+  // Background
+  ctx.fillStyle = '#0a0a1a';
+  ctx.fillRect(0, 0, SIZE, SIZE);
+
+  ctx.strokeStyle = '#2a2a4a';
+  ctx.lineWidth = 2;
+
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
+      const cell = maze[y][x];
+      const cx = x * cellSize, cy = y * cellSize;
+      if (cell.walls.top) { ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + cellSize, cy); ctx.stroke(); }
+      if (cell.walls.right) { ctx.beginPath(); ctx.moveTo(cx + cellSize, cy); ctx.lineTo(cx + cellSize, cy + cellSize); ctx.stroke(); }
+      if (cell.walls.bottom) { ctx.beginPath(); ctx.moveTo(cx, cy + cellSize); ctx.lineTo(cx + cellSize, cy + cellSize); ctx.stroke(); }
+      if (cell.walls.left) { ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx, cy + cellSize); ctx.stroke(); }
+    }
+  }
+
+  // Exit
+  const ex = exitPos.x * cellSize, ey = exitPos.y * cellSize;
+  ctx.fillStyle = '#00f5d4';
+  ctx.shadowColor = 'rgba(0,245,212,0.6)';
+  ctx.shadowBlur = 15;
+  ctx.fillRect(ex + cellSize * 0.15, ey + cellSize * 0.15, cellSize * 0.7, cellSize * 0.7);
+  ctx.shadowBlur = 0;
+
+  // Player
+  const px = player.x * cellSize + cellSize / 2;
+  const py = player.y * cellSize + cellSize / 2;
+  ctx.beginPath();
+  ctx.arc(px, py, cellSize * 0.3, 0, Math.PI * 2);
+  ctx.fillStyle = '#7b2ff7';
+  ctx.shadowColor = 'rgba(123,47,247,0.6)';
+  ctx.shadowBlur = 12;
+  ctx.fill();
+  ctx.shadowBlur = 0;
+
+  // Player trail glow
+  ctx.beginPath();
+  ctx.arc(px, py, cellSize * 0.35, 0, Math.PI * 2);
+  ctx.strokeStyle = 'rgba(123,47,247,0.3)';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+}
+
+function movePlayer(dx, dy) {
+  if (!gameActive) return;
+  const cell = maze[player.y][player.x];
+  if (dx === 1 && !cell.walls.right) player.x++;
+  else if (dx === -1 && !cell.walls.left) player.x--;
+  else if (dy === 1 && !cell.walls.bottom) player.y++;
+  else if (dy === -1 && !cell.walls.top) player.y--;
+
+  if (player.x === exitPos.x && player.y === exitPos.y) {
+    completeLevel();
+  }
+}
+
+function completeLevel() {
+  gameActive = false;
+  cancelAnimationFrame(animFrame);
+  const timeTaken = elapsed;
+  totalTime += timeTaken;
+  // Bonus: faster = more. Base 1000, minus time penalty, min 100
+  const bonus = Math.max(100, Math.round(1000 * level - timeTaken * 10));
+  score += bonus;
+  document.getElementById('scoreDisplay').textContent = score;
+
+  if (level >= maxLevel) {
+    document.getElementById('finalScore').textContent = score;
+    document.getElementById('timeReport').textContent = `Total time: ${totalTime.toFixed(1)}s`;
+    document.getElementById('gameOverScreen').style.display = 'flex';
+    PlayFunClient.submitScore(score).catch(() => {});
+  } else {
+    document.getElementById('levelTitle').textContent = `Level ${level} Complete!`;
+    document.getElementById('levelBonus').textContent = `+${bonus} points (${timeTaken.toFixed(1)}s)`;
+    document.getElementById('levelComplete').style.display = 'flex';
+  }
+}
+
+function nextLevel() {
+  document.getElementById('levelComplete').style.display = 'none';
+  level++;
+  gameActive = true;
+  initLevel();
+  gameLoop();
+}
+
+function gameLoop() {
+  if (!gameActive) return;
+  elapsed = (performance.now() - startTime) / 1000;
+  document.getElementById('timeDisplay').textContent = elapsed.toFixed(1);
+  drawMaze();
+  animFrame = requestAnimationFrame(gameLoop);
+}
+
+function startGame() {
+  document.getElementById('startScreen').style.display = 'none';
+  document.getElementById('gameOverScreen').style.display = 'none';
+  document.getElementById('levelComplete').style.display = 'none';
+  level = 1; score = 0; totalTime = 0;
+  document.getElementById('scoreDisplay').textContent = 0;
+  gameActive = true;
+  initLevel();
+  gameLoop();
+}
+
+document.addEventListener('keydown', (e) => {
+  switch(e.key) {
+    case 'ArrowUp': case 'w': case 'W': e.preventDefault(); movePlayer(0, -1); break;
+    case 'ArrowDown': case 's': case 'S': e.preventDefault(); movePlayer(0, 1); break;
+    case 'ArrowLeft': case 'a': case 'A': e.preventDefault(); movePlayer(-1, 0); break;
+    case 'ArrowRight': case 'd': case 'D': e.preventDefault(); movePlayer(1, 0); break;
+  }
+});
+
+// Touch controls
+let touchStartX, touchStartY;
+canvas.addEventListener('touchstart', e => {
+  touchStartX = e.touches[0].clientX;
+  touchStartY = e.touches[0].clientY;
+  e.preventDefault();
+});
+canvas.addEventListener('touchend', e => {
+  if (!touchStartX) return;
+  const dx = e.changedTouches[0].clientX - touchStartX;
+  const dy = e.changedTouches[0].clientY - touchStartY;
+  if (Math.abs(dx) > Math.abs(dy)) {
+    movePlayer(dx > 0 ? 1 : -1, 0);
+  } else {
+    movePlayer(0, dy > 0 ? 1 : -1);
+  }
+  e.preventDefault();
+});
+</script>
+</body>
+</html>

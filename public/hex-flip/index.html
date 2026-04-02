@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="x-ogp-key" content="fa29b0ef-94e6-4a82-b20f-08336b32c6c8">
+<title>Hex Flip - Play.fun</title>
+<script src="https://sdk.play.fun"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a1a; color: #fff;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    min-height: 100vh; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; overflow: hidden;
+  }
+  .btn {
+    padding: 14px 50px; font-size: 1.1em; font-weight: bold; border: none;
+    border-radius: 8px; cursor: pointer; background: linear-gradient(135deg, #7b2ff7, #00f5d4);
+    color: #fff; margin-top: 15px; transition: transform 0.15s, box-shadow 0.15s;
+  }
+  .btn:hover { transform: scale(1.05); box-shadow: 0 0 25px rgba(0,245,212,0.4); }
+  #hub-link {
+    position: fixed; top: 15px; right: 20px; color: #00f5d4; text-decoration: none;
+    font-size: 0.95em; z-index: 100; opacity: 0.8; transition: opacity 0.2s;
+  }
+  #hub-link:hover { opacity: 1; }
+  .overlay {
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(10,10,26,0.92); display: flex; flex-direction: column;
+    align-items: center; justify-content: center; z-index: 50;
+    backdrop-filter: blur(8px);
+  }
+  .overlay h1 { font-size: 2.8em; margin-bottom: 10px; background: linear-gradient(135deg, #7b2ff7, #00f5d4); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  .overlay p { font-size: 1.15em; color: #aaa; margin-bottom: 5px; }
+  .hidden { display: none !important; }
+  .score-display { font-size: 2.2em; color: #00f5d4; margin: 10px 0; text-shadow: 0 0 20px rgba(0,245,212,0.4); }
+
+  #game-area { text-align: center; }
+  .info-bar {
+    display: flex; gap: 30px; justify-content: center; margin-bottom: 20px;
+    font-size: 1.1em;
+  }
+  .info-val { color: #00f5d4; font-weight: bold; }
+  .info-val.moves { color: #ff2770; }
+
+  .hex-grid {
+    display: grid; grid-template-columns: repeat(4, 1fr);
+    gap: 10px; width: 340px; margin: 0 auto;
+  }
+  .hex-tile {
+    width: 75px; height: 75px; cursor: pointer;
+    clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+    transition: all 0.3s ease; position: relative;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .hex-tile.color-a {
+    background: linear-gradient(135deg, #7b2ff7, #5a1fd7);
+    box-shadow: 0 0 15px rgba(123,47,247,0.3);
+  }
+  .hex-tile.color-b {
+    background: linear-gradient(135deg, #00f5d4, #00c5a4);
+    box-shadow: 0 0 15px rgba(0,245,212,0.3);
+  }
+  .hex-tile:hover {
+    transform: scale(1.1);
+    filter: brightness(1.2);
+  }
+  .hex-tile.flipping {
+    animation: hexFlip 0.4s ease-in-out;
+  }
+  @keyframes hexFlip {
+    0% { transform: rotateY(0deg) scale(1); }
+    50% { transform: rotateY(90deg) scale(0.8); }
+    100% { transform: rotateY(0deg) scale(1); }
+  }
+  .hex-tile.solved {
+    animation: solvedPulse 0.6s ease-in-out;
+  }
+  @keyframes solvedPulse {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.15); }
+    100% { transform: scale(1); }
+  }
+
+  #status {
+    margin-top: 20px; font-size: 1.3em; min-height: 40px;
+    text-shadow: 0 0 10px rgba(0,245,212,0.3);
+  }
+  .par-info {
+    color: #aaa; font-size: 0.9em; margin-top: 8px;
+  }
+
+  .level-complete {
+    color: #00f5d4; font-size: 1.3em; margin: 10px 0;
+    text-shadow: 0 0 15px rgba(0,245,212,0.4);
+  }
+</style>
+</head>
+<body>
+<a id="hub-link" href="/">← Back to Hub</a>
+
+<div id="start-screen" class="overlay">
+  <h1>Hex Flip</h1>
+  <p>Click a hex to flip it and its neighbors!</p>
+  <p style="color:#00f5d4">Make all tiles the same color</p>
+  <p style="color:#7b2ff7">Fewer moves = higher score</p>
+  <button class="btn" onclick="startGame()">Play</button>
+</div>
+
+<div id="game-over-screen" class="overlay hidden">
+  <h1 id="final-title">Game Over</h1>
+  <div class="score-display" id="final-score">0</div>
+  <p id="result-detail"></p>
+  <button class="btn" onclick="startGame()">Play Again</button>
+</div>
+
+<div id="game-area" class="hidden">
+  <div class="info-bar">
+    <div>Level: <span class="info-val" id="level">1</span></div>
+    <div>Moves: <span class="info-val moves" id="moves">0</span></div>
+    <div>Score: <span class="info-val" id="score">0</span></div>
+  </div>
+  <div class="hex-grid" id="hex-grid"></div>
+  <div id="status"></div>
+  <div class="par-info" id="par-info"></div>
+</div>
+
+<script src="/shared/game-client.js"></script>
+<script>
+const SIZE = 4;
+let grid, moves, level, totalScore, par, gameActive, animating;
+
+function init() {
+  PlayFunClient.init('hex-flip', 'GAME_ID_HERE');
+}
+
+function getAdj(r, c) {
+  const adj = [];
+  // Direct neighbors (up, down, left, right)
+  if (r > 0) adj.push([r-1, c]);
+  if (r < SIZE-1) adj.push([r+1, c]);
+  if (c > 0) adj.push([r, c-1]);
+  if (c < SIZE-1) adj.push([r, c+1]);
+  // Hex-style diagonal based on column parity
+  if (c % 2 === 0) {
+    if (r > 0 && c > 0) adj.push([r-1, c-1]);
+    if (r > 0 && c < SIZE-1) adj.push([r-1, c+1]);
+  } else {
+    if (r < SIZE-1 && c > 0) adj.push([r+1, c-1]);
+    if (r < SIZE-1 && c < SIZE-1) adj.push([r+1, c+1]);
+  }
+  return adj;
+}
+
+function generateLevel(lvl) {
+  // Start with all same color, then do random flips to create puzzle
+  grid = Array.from({ length: SIZE }, () => Array(SIZE).fill(0));
+  const numFlips = 2 + lvl;
+  par = numFlips;
+  for (let i = 0; i < numFlips; i++) {
+    const r = Math.floor(Math.random() * SIZE);
+    const c = Math.floor(Math.random() * SIZE);
+    flipTile(r, c, true);
+  }
+  // Make sure it's not already solved
+  if (isSolved()) {
+    const r = Math.floor(Math.random() * SIZE);
+    const c = Math.floor(Math.random() * SIZE);
+    flipTile(r, c, true);
+    par++;
+  }
+}
+
+function flipTile(r, c, silent) {
+  grid[r][c] = 1 - grid[r][c];
+  const adj = getAdj(r, c);
+  for (const [ar, ac] of adj) {
+    grid[ar][ac] = 1 - grid[ar][ac];
+  }
+  if (!silent) {
+    // Animate
+    const tiles = [[r, c], ...adj];
+    tiles.forEach(([tr, tc]) => {
+      const el = getTileEl(tr, tc);
+      if (el) {
+        el.classList.add('flipping');
+        setTimeout(() => el.classList.remove('flipping'), 400);
+      }
+    });
+  }
+}
+
+function isSolved() {
+  const first = grid[0][0];
+  return grid.every(row => row.every(v => v === first));
+}
+
+function getTileEl(r, c) {
+  return document.querySelector(`.hex-tile[data-r="${r}"][data-c="${c}"]`);
+}
+
+function renderGrid() {
+  const container = document.getElementById('hex-grid');
+  container.innerHTML = '';
+  for (let r = 0; r < SIZE; r++) {
+    for (let c = 0; c < SIZE; c++) {
+      const tile = document.createElement('div');
+      tile.className = 'hex-tile ' + (grid[r][c] === 0 ? 'color-a' : 'color-b');
+      tile.dataset.r = r;
+      tile.dataset.c = c;
+      tile.addEventListener('click', () => onTileClick(r, c));
+      container.appendChild(tile);
+    }
+  }
+}
+
+function updateTileColors() {
+  for (let r = 0; r < SIZE; r++) {
+    for (let c = 0; c < SIZE; c++) {
+      const el = getTileEl(r, c);
+      if (el) {
+        el.classList.remove('color-a', 'color-b');
+        el.classList.add(grid[r][c] === 0 ? 'color-a' : 'color-b');
+      }
+    }
+  }
+}
+
+function startGame() {
+  document.getElementById('start-screen').classList.add('hidden');
+  document.getElementById('game-over-screen').classList.add('hidden');
+  document.getElementById('game-area').classList.remove('hidden');
+  level = 1; totalScore = 0; animating = false;
+  startLevel();
+}
+
+function startLevel() {
+  moves = 0;
+  gameActive = true;
+  generateLevel(level);
+  renderGrid();
+  updateUI();
+  document.getElementById('status').textContent = '';
+  document.getElementById('par-info').textContent = `Par: ${par} moves`;
+}
+
+function updateUI() {
+  document.getElementById('level').textContent = level;
+  document.getElementById('moves').textContent = moves;
+  document.getElementById('score').textContent = totalScore;
+}
+
+function onTileClick(r, c) {
+  if (!gameActive || animating) return;
+  animating = true;
+  moves++;
+  flipTile(r, c, false);
+
+  setTimeout(() => {
+    updateTileColors();
+    updateUI();
+    animating = false;
+
+    if (isSolved()) {
+      gameActive = false;
+      // Score: bonus for efficiency
+      const efficiency = Math.max(0, par * 2 - moves);
+      const levelScore = (100 + efficiency * 50) * level;
+      totalScore += levelScore;
+      updateUI();
+
+      // Animate solved
+      document.querySelectorAll('.hex-tile').forEach((el, i) => {
+        setTimeout(() => el.classList.add('solved'), i * 80);
+      });
+
+      const underPar = moves <= par;
+      document.getElementById('status').innerHTML = `<span class="level-complete">Level ${level} Complete! +${levelScore}${underPar ? ' (Under par!)' : ''}</span>`;
+
+      if (level >= 10) {
+        setTimeout(endGame, 1500);
+      } else {
+        level++;
+        setTimeout(startLevel, 1800);
+      }
+    } else if (moves >= par * 4) {
+      // Too many moves - game over
+      gameActive = false;
+      document.getElementById('status').innerHTML = '<span style="color:#ff2770">Too many moves! Game Over</span>';
+      setTimeout(endGame, 1200);
+    }
+  }, 350);
+}
+
+async function endGame() {
+  document.getElementById('final-title').textContent = level > 10 ? 'All Levels Complete!' : 'Game Over';
+  document.getElementById('final-score').textContent = totalScore;
+  document.getElementById('result-detail').textContent = `Reached level ${level} with ${totalScore} points`;
+  document.getElementById('game-over-screen').classList.remove('hidden');
+  try { await PlayFunClient.submitScore(totalScore); } catch(e) { console.log('Score submit error', e); }
+}
+
+init();
+</script>
+</body>
+</html>

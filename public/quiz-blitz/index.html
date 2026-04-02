@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="x-ogp-key" content="fa29b0ef-94e6-4a82-b20f-08336b32c6c8">
+<title>Quiz Blitz - Play.fun</title>
+<script src="https://sdk.play.fun"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a1a; color: #fff;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    min-height: 100vh; display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+  }
+  .hub-link {
+    position: fixed; top: 16px; right: 20px; z-index: 1000;
+    color: #00f5d4; text-decoration: none; font-size: 0.95em;
+    opacity: 0.8; transition: opacity 0.2s;
+  }
+  .hub-link:hover { opacity: 1; }
+  .btn {
+    padding: 14px 50px; font-size: 1.1em; font-weight: bold;
+    border: none; border-radius: 8px; cursor: pointer;
+    background: linear-gradient(135deg, #7b2ff7, #00f5d4);
+    color: #fff; margin-top: 15px;
+    transition: transform 0.15s, box-shadow 0.15s;
+  }
+  .btn:hover { transform: translateY(-2px); box-shadow: 0 6px 25px rgba(123,47,247,0.5); }
+  .overlay {
+    position: fixed; inset: 0; background: rgba(10,10,26,0.95);
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: center; z-index: 100; animation: fadeIn 0.3s ease;
+  }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  .overlay h1 {
+    font-size: 3em; margin-bottom: 10px;
+    background: linear-gradient(135deg, #7b2ff7, #00f5d4);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .overlay p { color: #aaa; font-size: 1.1em; margin-bottom: 5px; max-width: 500px; text-align: center; }
+  .overlay .score-display {
+    font-size: 2.5em; font-weight: bold; color: #00f5d4;
+    text-shadow: 0 0 20px rgba(0,245,212,0.5); margin: 15px 0;
+  }
+  .hud {
+    position: fixed; top: 16px; left: 20px; z-index: 50;
+    font-size: 1em; color: #aaa;
+  }
+  .hud span { color: #00f5d4; font-weight: bold; }
+  .quiz-container {
+    max-width: 600px; width: 90%; padding: 20px;
+  }
+  .timer-bar-wrap {
+    width: 100%; height: 6px; background: #1a1a3a;
+    border-radius: 3px; margin-bottom: 25px; overflow: hidden;
+  }
+  .timer-bar {
+    height: 100%; background: linear-gradient(90deg, #00f5d4, #7b2ff7);
+    border-radius: 3px; transition: width 0.1s linear;
+    box-shadow: 0 0 10px rgba(0,245,212,0.4);
+  }
+  .timer-bar.danger { background: linear-gradient(90deg, #ff2770, #ff8f00); }
+  .question {
+    font-size: 1.4em; font-weight: 600; margin-bottom: 25px;
+    line-height: 1.4; text-align: center;
+  }
+  .answers {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+  }
+  .answer-btn {
+    padding: 16px 20px; font-size: 1.05em;
+    background: linear-gradient(135deg, #1a1a3a, #2a2a5a);
+    border: 2px solid rgba(123,47,247,0.3);
+    border-radius: 10px; color: #fff; cursor: pointer;
+    transition: all 0.2s; text-align: center;
+  }
+  .answer-btn:hover:not(.disabled) {
+    border-color: #7b2ff7;
+    box-shadow: 0 0 15px rgba(123,47,247,0.3);
+    transform: translateY(-2px);
+  }
+  .answer-btn.correct {
+    border-color: #00f5d4; background: rgba(0,245,212,0.15);
+    box-shadow: 0 0 20px rgba(0,245,212,0.3);
+  }
+  .answer-btn.wrong {
+    border-color: #ff2770; background: rgba(255,39,112,0.15);
+    box-shadow: 0 0 20px rgba(255,39,112,0.3);
+  }
+  .answer-btn.disabled { pointer-events: none; opacity: 0.6; }
+  .streak-badge {
+    position: fixed; top: 60px; left: 50%; transform: translateX(-50%);
+    background: linear-gradient(135deg, #7b2ff7, #00f5d4);
+    padding: 6px 18px; border-radius: 20px; font-weight: bold;
+    font-size: 0.9em; z-index: 50;
+    animation: popIn 0.3s ease;
+    box-shadow: 0 4px 15px rgba(123,47,247,0.4);
+  }
+  @keyframes popIn { from { transform: translateX(-50%) scale(0.5); opacity: 0; } to { transform: translateX(-50%) scale(1); opacity: 1; } }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<a href="/" class="hub-link">&#8592; Back to Hub</a>
+<div class="hud hidden" id="hud">
+  Q: <span id="hud-q">1</span>/20 &nbsp;|&nbsp;
+  Score: <span id="hud-score">0</span> &nbsp;|&nbsp;
+  Streak: <span id="hud-streak">0</span>
+</div>
+
+<div id="start-screen" class="overlay">
+  <h1>Quiz Blitz</h1>
+  <p>20 questions. 15 seconds each. Answer fast for bonus points!</p>
+  <p>Build streaks for multiplied scores.</p>
+  <button class="btn" id="start-btn">Start Quiz</button>
+</div>
+
+<div id="gameover-screen" class="overlay hidden">
+  <h1>Quiz Complete!</h1>
+  <p id="stats-text">0/20 correct</p>
+  <p>Score</p>
+  <div class="score-display" id="final-score">0</div>
+  <button class="btn" id="restart-btn">Play Again</button>
+</div>
+
+<div class="quiz-container hidden" id="quiz-container">
+  <div class="timer-bar-wrap"><div class="timer-bar" id="timer-bar"></div></div>
+  <div class="question" id="question"></div>
+  <div class="answers" id="answers"></div>
+</div>
+<div class="streak-badge hidden" id="streak-badge"></div>
+
+<script src="/shared/game-client.js"></script>
+<script>
+PlayFunClient.init('quiz-blitz', 'GAME_ID_HERE');
+
+const QUESTIONS = [
+  { q: "What planet is known as the Red Planet?", a: ["Mars", "Venus", "Jupiter", "Saturn"], c: 0 },
+  { q: "How many continents are there?", a: ["5", "6", "7", "8"], c: 2 },
+  { q: "What is the largest ocean on Earth?", a: ["Atlantic", "Indian", "Pacific", "Arctic"], c: 2 },
+  { q: "Who painted the Mona Lisa?", a: ["Michelangelo", "Da Vinci", "Raphael", "Picasso"], c: 1 },
+  { q: "What is the chemical symbol for gold?", a: ["Go", "Gd", "Au", "Ag"], c: 2 },
+  { q: "How many bones are in the human body?", a: ["186", "206", "226", "246"], c: 1 },
+  { q: "What is the speed of light in km/s (approx)?", a: ["100,000", "200,000", "300,000", "400,000"], c: 2 },
+  { q: "Which country invented pizza?", a: ["France", "Spain", "Italy", "Greece"], c: 2 },
+  { q: "What year did World War II end?", a: ["1943", "1944", "1945", "1946"], c: 2 },
+  { q: "What is the hardest natural substance?", a: ["Granite", "Diamond", "Ruby", "Titanium"], c: 1 },
+  { q: "What is the smallest prime number?", a: ["0", "1", "2", "3"], c: 2 },
+  { q: "Which element has the symbol 'O'?", a: ["Osmium", "Oxygen", "Oganesson", "Olivine"], c: 1 },
+  { q: "What is the capital of Japan?", a: ["Osaka", "Kyoto", "Tokyo", "Nagoya"], c: 2 },
+  { q: "Who wrote Romeo and Juliet?", a: ["Dickens", "Shakespeare", "Austen", "Hemingway"], c: 1 },
+  { q: "How many sides does a hexagon have?", a: ["5", "6", "7", "8"], c: 1 },
+  { q: "What is the boiling point of water in Celsius?", a: ["90", "95", "100", "110"], c: 2 },
+  { q: "What is the largest planet in our solar system?", a: ["Saturn", "Neptune", "Jupiter", "Uranus"], c: 2 },
+  { q: "Which gas do plants absorb from the atmosphere?", a: ["Oxygen", "Nitrogen", "CO2", "Hydrogen"], c: 2 },
+  { q: "What is the tallest mountain on Earth?", a: ["K2", "Kangchenjunga", "Everest", "Lhotse"], c: 2 },
+  { q: "What color is an emerald?", a: ["Red", "Blue", "Green", "Yellow"], c: 2 },
+  { q: "What is the currency of the UK?", a: ["Euro", "Dollar", "Pound", "Franc"], c: 2 },
+  { q: "How many degrees in a circle?", a: ["180", "270", "360", "420"], c: 2 },
+  { q: "What language has the most native speakers?", a: ["English", "Spanish", "Hindi", "Mandarin"], c: 3 },
+  { q: "What organ pumps blood through the body?", a: ["Brain", "Lungs", "Heart", "Liver"], c: 2 },
+  { q: "What is the longest river in the world?", a: ["Amazon", "Nile", "Mississippi", "Yangtze"], c: 1 },
+  { q: "Which planet has rings?", a: ["Mars", "Saturn", "Mercury", "Venus"], c: 1 },
+  { q: "What is the square root of 144?", a: ["10", "11", "12", "14"], c: 2 },
+  { q: "In what year was the internet invented?", a: ["1969", "1975", "1983", "1991"], c: 0 },
+  { q: "What country has the most people?", a: ["USA", "India", "China", "Indonesia"], c: 1 },
+  { q: "What is H2O commonly known as?", a: ["Acid", "Water", "Salt", "Alcohol"], c: 1 },
+  { q: "Who discovered gravity (famously)?", a: ["Einstein", "Newton", "Galileo", "Tesla"], c: 1 },
+  { q: "How many strings does a standard guitar have?", a: ["4", "5", "6", "8"], c: 2 },
+  { q: "What is the freezing point of water in Fahrenheit?", a: ["0", "32", "40", "50"], c: 1 },
+  { q: "Which animal is known as the King of the Jungle?", a: ["Tiger", "Lion", "Elephant", "Bear"], c: 1 },
+  { q: "What is the largest desert in the world?", a: ["Sahara", "Gobi", "Antarctic", "Arabian"], c: 2 },
+  { q: "What does DNA stand for?", a: ["Deoxyribose Acid", "Deoxyribonucleic Acid", "Dynamic Nuclear Acid", "Dual Nitrogen Acid"], c: 1 },
+  { q: "How many players are on a soccer team?", a: ["9", "10", "11", "12"], c: 2 },
+  { q: "What is the main ingredient in guacamole?", a: ["Tomato", "Avocado", "Onion", "Pepper"], c: 1 },
+  { q: "Who was the first person on the Moon?", a: ["Buzz Aldrin", "Neil Armstrong", "John Glenn", "Yuri Gagarin"], c: 1 },
+  { q: "What is the smallest country in the world?", a: ["Monaco", "Vatican City", "San Marino", "Liechtenstein"], c: 1 },
+  { q: "What is the powerhouse of the cell?", a: ["Nucleus", "Ribosome", "Mitochondria", "Golgi"], c: 2 },
+  { q: "What does 'www' stand for?", a: ["World Wide Web", "Western World Web", "Web World Wide", "World Web Wide"], c: 0 },
+];
+
+const TIME_LIMIT = 15;
+const TOTAL_Q = 20;
+
+let questionIndex = 0;
+let score = 0;
+let streak = 0;
+let correct = 0;
+let timerStart = 0;
+let timerInterval = null;
+let answered = false;
+let questionOrder = [];
+
+document.getElementById('start-btn').addEventListener('click', startGame);
+document.getElementById('restart-btn').addEventListener('click', startGame);
+
+function shuffle(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+function startGame() {
+  document.getElementById('start-screen').classList.add('hidden');
+  document.getElementById('gameover-screen').classList.add('hidden');
+  document.getElementById('quiz-container').classList.remove('hidden');
+  document.getElementById('hud').classList.remove('hidden');
+  questionIndex = 0;
+  score = 0;
+  streak = 0;
+  correct = 0;
+  questionOrder = shuffle([...Array(QUESTIONS.length).keys()]).slice(0, TOTAL_Q);
+  loadQuestion();
+}
+
+function loadQuestion() {
+  answered = false;
+  document.getElementById('hud-q').textContent = questionIndex + 1;
+  document.getElementById('hud-score').textContent = score;
+  document.getElementById('hud-streak').textContent = streak;
+
+  const q = QUESTIONS[questionOrder[questionIndex]];
+  document.getElementById('question').textContent = q.q;
+
+  const answersEl = document.getElementById('answers');
+  answersEl.innerHTML = '';
+  q.a.forEach((ans, i) => {
+    const btn = document.createElement('button');
+    btn.className = 'answer-btn';
+    btn.textContent = ans;
+    btn.addEventListener('click', () => handleAnswer(i));
+    answersEl.appendChild(btn);
+  });
+
+  timerStart = Date.now();
+  clearInterval(timerInterval);
+  timerInterval = setInterval(updateTimer, 50);
+}
+
+function updateTimer() {
+  const elapsed = (Date.now() - timerStart) / 1000;
+  const remaining = Math.max(0, TIME_LIMIT - elapsed);
+  const pct = (remaining / TIME_LIMIT) * 100;
+  const bar = document.getElementById('timer-bar');
+  bar.style.width = pct + '%';
+  bar.classList.toggle('danger', pct < 25);
+  if (remaining <= 0) {
+    handleAnswer(-1); // Time's up
+  }
+}
+
+function handleAnswer(chosen) {
+  if (answered) return;
+  answered = true;
+  clearInterval(timerInterval);
+
+  const q = QUESTIONS[questionOrder[questionIndex]];
+  const btns = document.querySelectorAll('.answer-btn');
+  btns.forEach(b => b.classList.add('disabled'));
+  btns[q.c].classList.add('correct');
+
+  const elapsed = (Date.now() - timerStart) / 1000;
+  const timeBonus = Math.max(0, Math.round((TIME_LIMIT - elapsed) * 20));
+
+  if (chosen === q.c) {
+    correct++;
+    streak++;
+    const streakMult = 1 + (streak - 1) * 0.25;
+    const points = Math.round((100 + timeBonus) * streakMult);
+    score += points;
+    showStreak();
+  } else {
+    if (chosen >= 0) btns[chosen].classList.add('wrong');
+    streak = 0;
+    hideStreak();
+  }
+
+  document.getElementById('hud-score').textContent = score;
+  document.getElementById('hud-streak').textContent = streak;
+
+  setTimeout(() => {
+    questionIndex++;
+    if (questionIndex >= TOTAL_Q) {
+      endGame();
+    } else {
+      loadQuestion();
+    }
+  }, 1000);
+}
+
+function showStreak() {
+  const badge = document.getElementById('streak-badge');
+  if (streak >= 2) {
+    badge.textContent = streak + 'x Streak!';
+    badge.classList.remove('hidden');
+    badge.style.animation = 'none';
+    badge.offsetHeight; // reflow
+    badge.style.animation = '';
+  }
+}
+function hideStreak() {
+  document.getElementById('streak-badge').classList.add('hidden');
+}
+
+async function endGame() {
+  document.getElementById('quiz-container').classList.add('hidden');
+  document.getElementById('hud').classList.add('hidden');
+  hideStreak();
+  document.getElementById('stats-text').textContent = `${correct}/${TOTAL_Q} correct`;
+  document.getElementById('final-score').textContent = score;
+  document.getElementById('gameover-screen').classList.remove('hidden');
+  try { await PlayFunClient.submitScore(score); } catch (e) { console.error(e); }
+}
+</script>
+</body>
+</html>

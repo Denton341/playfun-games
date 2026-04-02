@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="x-ogp-key" content="fa29b0ef-94e6-4a82-b20f-08336b32c6c8">
+<title>Word Blitz - Speed Word Game</title>
+<script src="https://sdk.play.fun"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0a0a1a; color: #fff; font-family: 'Segoe UI', system-ui, sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+  .container { text-align: center; max-width: 500px; width: 100%; padding: 20px; }
+  h1 { color: #00f5d4; font-size: 2em; margin-bottom: 5px; }
+  .subtitle { color: #888; margin-bottom: 20px; }
+  #timer-bar { width: 100%; height: 6px; background: #1a1a2a; border-radius: 3px; margin: 15px 0; overflow: hidden; }
+  #timer-fill { height: 100%; background: linear-gradient(90deg, #ff2770, #f5d400, #00f5d4); transition: width 0.1s linear; width: 100%; }
+  #hud { display: flex; justify-content: space-between; margin-bottom: 20px; }
+  .hud-item .label { color: #888; font-size: 12px; text-transform: uppercase; }
+  .hud-item .value { color: #00f5d4; font-size: 1.8em; font-weight: bold; }
+  #letters { display: flex; gap: 8px; justify-content: center; margin: 20px 0; flex-wrap: wrap; }
+  .letter-tile {
+    width: 50px; height: 50px; background: #14141f; border: 2px solid #2a2a4a;
+    border-radius: 8px; display: flex; align-items: center; justify-content: center;
+    font-size: 1.5em; font-weight: bold; cursor: pointer; transition: all 0.2s;
+    user-select: none;
+  }
+  .letter-tile:hover { border-color: #7b2ff7; }
+  .letter-tile.selected { background: #7b2ff7; border-color: #7b2ff7; transform: scale(1.1); }
+  #current-word { font-size: 2em; color: #00f5d4; min-height: 50px; margin: 10px 0; letter-spacing: 4px; font-weight: bold; }
+  #word-list { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin: 15px 0; min-height: 30px; }
+  .found-word { padding: 4px 12px; background: #1a2a1a; border: 1px solid #00f5d4; border-radius: 4px; color: #00f5d4; font-size: 14px; }
+  .btn-row { display: flex; gap: 10px; justify-content: center; margin-top: 15px; }
+  .btn { padding: 10px 30px; font-size: 1em; font-weight: bold; border: none; border-radius: 8px; cursor: pointer; color: #fff; }
+  .btn-primary { background: linear-gradient(135deg, #7b2ff7, #00f5d4); }
+  .btn-secondary { background: #2a2a4a; }
+  .btn:hover { transform: scale(1.05); }
+  #message { color: #ff2770; min-height: 24px; margin: 8px 0; font-size: 14px; }
+  .overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(10,10,26,0.95); display: flex; align-items: center; justify-content: center; z-index: 10; }
+  .overlay-box { text-align: center; padding: 40px; }
+  .overlay-box h2 { font-size: 2em; margin-bottom: 10px; }
+  .overlay-box .big-score { color: #00f5d4; font-size: 3em; font-weight: bold; }
+  .back-link { position: fixed; top: 20px; right: 20px; color: #555; text-decoration: none; font-size: 14px; }
+  .back-link:hover { color: #00f5d4; }
+</style>
+</head>
+<body>
+<a href="/" class="back-link">Back to Hub</a>
+<div class="container" id="game-screen" style="display:none;">
+  <div id="hud">
+    <div class="hud-item"><div class="label">Score</div><div class="value" id="score">0</div></div>
+    <div class="hud-item"><div class="label">Words</div><div class="value" id="word-count">0</div></div>
+    <div class="hud-item"><div class="label">Time</div><div class="value" id="time">60</div></div>
+  </div>
+  <div id="timer-bar"><div id="timer-fill"></div></div>
+  <div id="current-word">&nbsp;</div>
+  <div id="message">&nbsp;</div>
+  <div id="letters"></div>
+  <div class="btn-row">
+    <button class="btn btn-secondary" onclick="clearWord()">Clear</button>
+    <button class="btn btn-primary" onclick="submitWord()">Submit</button>
+    <button class="btn btn-secondary" onclick="shuffleLetters()">Shuffle</button>
+  </div>
+  <div id="word-list"></div>
+</div>
+<div class="overlay" id="start-overlay">
+  <div class="overlay-box">
+    <h1 style="color:#00f5d4; font-size:2.5em;">Word Blitz</h1>
+    <p style="color:#888; margin:10px 0 20px;">Find as many words as you can in 60 seconds!</p>
+    <button class="btn btn-primary" onclick="startGame()" style="padding:14px 50px; font-size:1.2em;">START</button>
+  </div>
+</div>
+<div class="overlay" id="end-overlay" style="display:none;">
+  <div class="overlay-box">
+    <h2>Time's Up!</h2>
+    <div class="big-score" id="final-score">0</div>
+    <p style="color:#888; margin:10px 0;">words found: <span id="final-words">0</span></p>
+    <button class="btn btn-primary" onclick="startGame()" style="margin-top:15px; padding:14px 50px;">PLAY AGAIN</button>
+  </div>
+</div>
+<script src="/shared/game-client.js"></script>
+<script>
+// Common English words (3-7 letters) for validation
+const WORD_LIST = new Set([
+  "the","and","for","are","but","not","you","all","can","had","her","was","one","our","out",
+  "day","get","has","him","his","how","its","may","new","now","old","see","way","who","boy",
+  "did","let","put","say","she","too","use","age","ago","air","art","ask","ate","bad","bag",
+  "bat","bed","big","bit","box","bus","buy","car","cat","cup","cut","dad","dog","ear","eat",
+  "end","eye","far","few","fly","fun","gas","god","got","gun","guy","hat","hit","hot","ice",
+  "ill","job","key","kid","lay","led","leg","lie","lip","lot","low","map","mix","mom","nor",
+  "nut","odd","oil","own","pay","per","pet","pie","pin","pop","pot","ran","raw","red","rid",
+  "rise","rock","role","room","rule","safe","said","salt","same","sand","sang","save","seat",
+  "seed","seek","seem","self","sell","send","sept","serve","set","ship","shop","shot","show",
+  "shut","sick","side","sign","sing","site","size","skin","slip","slow","snap","snow","soft",
+  "soil","sold","sole","some","song","soon","sort","soul","spot","star","stay","step","stop",
+  "such","sure","swim","tail","take","tale","talk","tall","tank","tape","task","team","tell",
+  "tend","term","test","text","than","that","them","then","they","thin","this","thus","tied",
+  "till","tiny","tire","told","tone","took","tool","tops","torn","tour","town","trap","tree",
+  "trim","trip","true","tube","tuck","tune","turn","twin","type","ugly","unit","upon","used",
+  "user","vast","verb","very","vote","wage","wait","wake","walk","wall","want","warm","warn",
+  "wash","wave","weak","wear","week","well","went","were","west","what","when","whom","wide",
+  "wife","wild","will","wind","wine","wing","wire","wise","wish","with","wood","word","wore",
+  "work","worm","worn","wrap","yard","year","zero","zone","able","also","area","army","away",
+  "baby","back","ball","band","bank","base","bath","bear","beat","been","beer","bell","belt",
+  "bend","best","bill","bird","blow","blue","boat","body","bolt","bomb","bond","bone","book",
+  "born","boss","both","burn","busy","cake","call","calm","came","camp","card","care","case",
+  "cash","cast","cell","chip","city","club","coal","coat","code","cold","come","cook","cool",
+  "cope","copy","core","cost","crew","crop","dark","data","date","dead","deal","dear","debt",
+  "deep","deny","diet","dirt","dish","disk","does","done","door","dose","down","draw","drew",
+  "drop","drug","drum","dual","duke","dust","duty","each","earn","ease","east","easy","edge",
+  "else","even","ever","evil","exam","face","fact","fail","fair","fall","fame","farm","fast",
+  "fate","fear","feed","feel","feet","fell","felt","file","fill","film","final","find","fine",
+  "fire","firm","fish","five","flat","fled","flew","flow","folk","food","foot","ford","form",
+  "fort","four","free","from","fuel","full","fund","gain","game","gang","gate","gave","gene",
+  "gift","girl","give","glad","goal","goes","gold","golf","gone","good","grab","gray","grew",
+  "grip","grow","gulf","hair","half","hall","hand","hang","hard","harm","hate","have","head",
+  "hear","heat","held","help","here","hero","hide","high","hill","hire","hold","hole","holy",
+  "home","hope","host","hour","huge","hung","hunt","hurt","idea","inch","into","iron","item",
+  "jack","jane","jean","john","join","joke","jump","jury","just","keen","keep","kent","kept",
+  "kick","kill","kind","king","knee","knew","know","lack","lady","laid","lake","land","lane",
+  "last","late","lead","left","lend","less","life","lift","like","line","link","list","live",
+  "load","loan","lock","logo","long","look","lord","lose","loss","lost","love","luck","made",
+  "mail","main","make","male","mark","mass","mate","meal","mean","meat","meet","mile","milk",
+  "mind","mine","miss","mode","mood","moon","more","most","move","much","must","name","near",
+  "neat","neck","need","news","next","nice","nine","node","none","nose","note","okay","once",
+  "only","onto","open","oral","over","pace","pack","page","paid","pain","pair","pale","palm",
+  "park","part","pass","past","path","peak","pick","pile","pine","pink","pipe","plan","play",
+  "plot","plus","poem","poet","pole","poll","pool","poor","pope","port","pose","post","pour",
+  "pray","pull","pure","push","quit","race","rain","rank","rare","rate","read","real","rear",
+  "rely","rent","rest","rice","rich","ride","ring","able","ache","acre","aged","aide","aims",
+  "bake","bare","barn","beam","bean","bike","bite","bold","bore","bowl","bulk","cage","clan",
+  "claw","clay","clip","clog","clue","coil","coin","cozy","crab","cure","curl","dare","dawn",
+  "daze","dice","dine","dip","dive","dock","dome","dose","dove","drab","drag","drip","dull",
+  "dumb","dump","dune","dusk","dye","eave","epic","fade","fake","fang","fate","fawn","faze",
+  "fern","fib","fig","fist","flab","flag","flak","flap","flaw","flea","flex","flip","flit",
+  "flog","flop","foam","foe","fold","fond","foul","fowl","fray","frog","fume","fury","fuse",
+  "fuzz","gale","gape","garb","gaze","gear","germ","gist","glen","glib","glow","glue","gnaw",
+  "goad","gore","gown","grab","gram","grim","grin","grit","grub","gulp","gust","hack","hail",
+  "hale","halt","hare","harp","haul","hawk","haze","heap","helm","herb","herd","hike","hint",
+  "hive","hoax","hoist","hood","hook","hoop","horn","hose","howl","huff","hulk","hurl","hymn",
+  "iota","isle","jade","jamb","jape","jarl","jeer","jerk","jest","jilt","jinx","jive","jolt",
+  "keen","kelp","kiln","kilt","kink","kite","knack","knob","knot","lace","lame","lark","lash",
+  "lass","lath","lawn","laze","leak","lean","leap","lime","limp","lint","lion","lobe","loft",
+  "loom","loot","lore","lout","lull","lump","lure","lurk","lush","mace","malt","mane","mare",
+  "mash","mast","maze","mead","mesh","mild","mime","mint","mire","moan","moat","mock","mold",
+  "molt","monk","mope","moss","moth","mule","murk","muse","mush","musk","mute","myth","nail",
+  "nape","nave","nest","nook","noon","norm","nova","null","oath","oats","odds","omen","ooze",
+  "opal","orca","oval","oven","owls","oxen","pact","pail","pane","pang","pant","pawn","peal",
+  "pear","peat","peel","pier","pike","pine","pint","plod","plop","plow","ploy","plug","plum",
+  "plop","poke","polo","pomp","pond","pony","pore","pork","pose","pout","prep","prey","prig",
+  "prim","prod","prop","prow","prude","prune","pulp","pump","pun","pyre","quay","quip","raft",
+  "rage","raid","rail","rake","ramp","rash","rasp","raze","reed","reef","reel","rein","rift",
+  "rile","rime","rind","rink","riot","ripe","roam","robe","rode","romp","roof","rook","root",
+  "rope","rose","rout","rove","rude","ruin","rump","rung","ruse","rush","rust","sage","sake",
+  "sane","sari","sash","satin","scab","scan","scar","seal","seam","sect","shed","shin","shun",
+  "sift","sill","silt","sire","skit","slab","slag","slam","slap","slaw","slay","sled","slew",
+  "slim","slit","slob","slop","slot","slug","slum","slur","smog","snag","snip","snob","snub",
+  "soak","soar","sock","soot","sore","sour","span","spar","spec","sped","spin","spit","spur",
+  "stab","stag","stem","stew","stir","stub","stud","stun","sway","tack","tact","tame","tang",
+  "tarn","tarp","tart","teak","teem","tend","text","thaw","tick","tide","tidy","tier","tile",
+  "tilt","toad","toil","toll","tomb","tore","toss","tout","tram","tray","trek","trio","trod",
+  "trot","troy","thud","thug","twig","twit","vale","vane","vase","veil","vein","vent","vest",
+  "veto","vial","vine","void","volt","wade","wail","waif","wane","warp","wart","wasp","watt",
+  "wax","wean","weed","weep","weld","welt","wick","wield","wilt","wimp","wink","wipe","wiry",
+  "woe","woke","womb","wove","wren","yank","yawn","yell","yelp","yoga","yoke","zeal","zest"
+]);
+
+let letters = [];
+let selected = [];
+let foundWords = [];
+let score = 0;
+let timeLeft = 60;
+let timerInterval = null;
+let gameActive = false;
+
+const VOWELS = 'AEIOU';
+const CONSONANTS = 'BCDFGHJKLMNPQRSTVWXYZ';
+
+function generateLetters() {
+  letters = [];
+  // Ensure at least 3 vowels
+  for (let i = 0; i < 3; i++) letters.push(VOWELS[Math.floor(Math.random() * VOWELS.length)]);
+  for (let i = 0; i < 5; i++) letters.push(CONSONANTS[Math.floor(Math.random() * CONSONANTS.length)]);
+  // Shuffle
+  for (let i = letters.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [letters[i], letters[j]] = [letters[j], letters[i]];
+  }
+}
+
+function renderLetters() {
+  const container = document.getElementById('letters');
+  container.innerHTML = '';
+  letters.forEach((letter, i) => {
+    const tile = document.createElement('div');
+    tile.className = 'letter-tile' + (selected.includes(i) ? ' selected' : '');
+    tile.textContent = letter;
+    tile.onclick = () => toggleLetter(i);
+    container.appendChild(tile);
+  });
+}
+
+function toggleLetter(index) {
+  if (!gameActive) return;
+  const pos = selected.indexOf(index);
+  if (pos >= 0) selected.splice(pos, 1);
+  else selected.push(index);
+  document.getElementById('current-word').textContent = selected.map(i => letters[i]).join('') || '\u00A0';
+  renderLetters();
+}
+
+function clearWord() {
+  selected = [];
+  document.getElementById('current-word').textContent = '\u00A0';
+  document.getElementById('message').textContent = '\u00A0';
+  renderLetters();
+}
+
+function submitWord() {
+  if (!gameActive) return;
+  const word = selected.map(i => letters[i]).join('').toLowerCase();
+  const msg = document.getElementById('message');
+
+  if (word.length < 3) { msg.textContent = 'Words must be 3+ letters'; return; }
+  if (foundWords.includes(word)) { msg.textContent = 'Already found!'; return; }
+  if (!WORD_LIST.has(word)) { msg.textContent = 'Not a valid word'; return; }
+
+  // Valid word!
+  foundWords.push(word);
+  const points = word.length * word.length * 10; // Longer words = way more points
+  score += points;
+  document.getElementById('score').textContent = score;
+  document.getElementById('word-count').textContent = foundWords.length;
+  msg.textContent = `+${points} points!`;
+  msg.style.color = '#00f5d4';
+  setTimeout(() => { msg.style.color = '#ff2770'; msg.textContent = '\u00A0'; }, 1000);
+
+  // Add to found list
+  const wl = document.getElementById('word-list');
+  const tag = document.createElement('span');
+  tag.className = 'found-word';
+  tag.textContent = word.toUpperCase();
+  wl.appendChild(tag);
+
+  clearWord();
+
+  // Give new letters every 5 words
+  if (foundWords.length % 5 === 0) {
+    generateLetters();
+    renderLetters();
+  }
+}
+
+function shuffleLetters() {
+  if (!gameActive) return;
+  for (let i = letters.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [letters[i], letters[j]] = [letters[j], letters[i]];
+  }
+  clearWord();
+}
+
+function startGame() {
+  document.getElementById('start-overlay').style.display = 'none';
+  document.getElementById('end-overlay').style.display = 'none';
+  document.getElementById('game-screen').style.display = 'block';
+
+  score = 0; timeLeft = 60; foundWords = []; selected = [];
+  document.getElementById('score').textContent = '0';
+  document.getElementById('word-count').textContent = '0';
+  document.getElementById('time').textContent = '60';
+  document.getElementById('word-list').innerHTML = '';
+  document.getElementById('current-word').textContent = '\u00A0';
+  document.getElementById('message').textContent = '\u00A0';
+  document.getElementById('timer-fill').style.width = '100%';
+
+  generateLetters();
+  renderLetters();
+  gameActive = true;
+
+  clearInterval(timerInterval);
+  timerInterval = setInterval(() => {
+    timeLeft--;
+    document.getElementById('time').textContent = timeLeft;
+    document.getElementById('timer-fill').style.width = (timeLeft / 60 * 100) + '%';
+    if (timeLeft <= 0) endGame();
+  }, 1000);
+}
+
+async function endGame() {
+  gameActive = false;
+  clearInterval(timerInterval);
+  document.getElementById('end-overlay').style.display = 'flex';
+  document.getElementById('final-score').textContent = score;
+  document.getElementById('final-words').textContent = foundWords.length;
+  await PlayFunClient.submitScore(score);
+}
+
+// Keyboard support
+window.addEventListener('keydown', e => {
+  if (!gameActive) return;
+  if (e.key === 'Enter') { submitWord(); return; }
+  if (e.key === 'Backspace') {
+    if (selected.length > 0) selected.pop();
+    document.getElementById('current-word').textContent = selected.map(i => letters[i]).join('') || '\u00A0';
+    renderLetters();
+    return;
+  }
+  const letter = e.key.toUpperCase();
+  const idx = letters.findIndex((l, i) => l === letter && !selected.includes(i));
+  if (idx >= 0) toggleLetter(idx);
+});
+
+PlayFunClient.init('word-blitz', 'GAME_ID_HERE');
+</script>
+</body>
+</html>

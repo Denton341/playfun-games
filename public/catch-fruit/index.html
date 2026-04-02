@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="x-ogp-key" content="fa29b0ef-94e6-4a82-b20f-08336b32c6c8">
+<title>Catch Fruit - Play.fun</title>
+<script src="https://sdk.play.fun"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a1a; color: #fff;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    min-height: 100vh; overflow: hidden;
+  }
+  .hub-link {
+    position: fixed; top: 16px; right: 20px; z-index: 1000;
+    color: #00f5d4; text-decoration: none; font-size: 0.95em;
+    opacity: 0.8; transition: opacity 0.2s;
+  }
+  .hub-link:hover { opacity: 1; }
+  .btn {
+    padding: 14px 50px; font-size: 1.1em; font-weight: bold;
+    border: none; border-radius: 8px; cursor: pointer;
+    background: linear-gradient(135deg, #7b2ff7, #00f5d4);
+    color: #fff; margin-top: 15px;
+    transition: transform 0.15s, box-shadow 0.15s;
+  }
+  .btn:hover { transform: translateY(-2px); box-shadow: 0 6px 25px rgba(123,47,247,0.5); }
+  .overlay {
+    position: fixed; inset: 0; background: rgba(10,10,26,0.95);
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: center; z-index: 100; animation: fadeIn 0.3s ease;
+  }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  .overlay h1 {
+    font-size: 3em; margin-bottom: 10px;
+    background: linear-gradient(135deg, #7b2ff7, #00f5d4);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .overlay p { color: #aaa; font-size: 1.1em; margin-bottom: 5px; max-width: 500px; text-align: center; }
+  .overlay .score-display {
+    font-size: 2.5em; font-weight: bold; color: #00f5d4;
+    text-shadow: 0 0 20px rgba(0,245,212,0.5); margin: 15px 0;
+  }
+  canvas { display: block; }
+  .hud {
+    position: fixed; top: 16px; left: 20px; z-index: 50;
+    font-size: 1em; color: #aaa;
+  }
+  .hud span { color: #00f5d4; font-weight: bold; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<a href="/" class="hub-link">&#8592; Back to Hub</a>
+<div class="hud hidden" id="hud">
+  Score: <span id="hud-score">0</span> &nbsp;|&nbsp;
+  Time: <span id="hud-time">60</span>s &nbsp;|&nbsp;
+  Lives: <span id="hud-lives">3</span>
+</div>
+
+<div id="start-screen" class="overlay">
+  <h1>Catch Fruit</h1>
+  <p>Move the basket to catch falling fruits! Avoid the bombs!</p>
+  <p>Arrow keys or touch to move. 60 seconds.</p>
+  <button class="btn" id="start-btn">Start Game</button>
+</div>
+
+<div id="gameover-screen" class="overlay hidden">
+  <h1>Game Over</h1>
+  <p id="stats-text">Caught 0 fruits</p>
+  <p>Score</p>
+  <div class="score-display" id="final-score">0</div>
+  <button class="btn" id="restart-btn">Play Again</button>
+</div>
+
+<canvas id="canvas"></canvas>
+
+<script src="/shared/game-client.js"></script>
+<script>
+PlayFunClient.init('catch-fruit', 'GAME_ID_HERE');
+
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+let W, H;
+
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+const FRUITS = [
+  { emoji: '\uD83C\uDF4E', points: 10 },  // apple
+  { emoji: '\uD83C\uDF4A', points: 10 },  // orange
+  { emoji: '\uD83C\uDF53', points: 15 },  // strawberry
+  { emoji: '\uD83C\uDF47', points: 20 },  // grapes
+  { emoji: '\uD83C\uDF52', points: 15 },  // cherries
+  { emoji: '\uD83C\uDF49', points: 25 },  // watermelon
+  { emoji: '\uD83C\uDF4C', points: 10 },  // banana
+  { emoji: '\u2B50', points: 50 },        // star (bonus)
+];
+const BOMB = { emoji: '\uD83D\uDCA3', points: -1 };
+
+const GAME_TIME = 60;
+let basket = { x: 0, y: 0, w: 80, h: 50, speed: 8 };
+let items = [];
+let score = 0;
+let lives = 3;
+let caught = 0;
+let gameRunning = false;
+let startTime = 0;
+let spawnTimer = 0;
+let spawnInterval = 45;
+let animFrame = null;
+let particles = [];
+let keys = {};
+let touchX = null;
+
+document.getElementById('start-btn').addEventListener('click', startGame);
+document.getElementById('restart-btn').addEventListener('click', startGame);
+
+document.addEventListener('keydown', e => { keys[e.key] = true; });
+document.addEventListener('keyup', e => { keys[e.key] = false; });
+
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  touchX = e.touches[0].clientX;
+}, { passive: false });
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  touchX = e.touches[0].clientX;
+}, { passive: false });
+canvas.addEventListener('touchend', () => { touchX = null; });
+
+function startGame() {
+  document.getElementById('start-screen').classList.add('hidden');
+  document.getElementById('gameover-screen').classList.add('hidden');
+  document.getElementById('hud').classList.remove('hidden');
+
+  basket.x = W / 2 - basket.w / 2;
+  basket.y = H - 80;
+  items = [];
+  particles = [];
+  score = 0;
+  lives = 3;
+  caught = 0;
+  spawnTimer = 0;
+  spawnInterval = 45;
+  startTime = Date.now();
+  gameRunning = true;
+  updateHUD();
+  if (animFrame) cancelAnimationFrame(animFrame);
+  loop();
+}
+
+function updateHUD() {
+  const elapsed = Math.floor((Date.now() - startTime) / 1000);
+  const remaining = Math.max(0, GAME_TIME - elapsed);
+  document.getElementById('hud-score').textContent = score;
+  document.getElementById('hud-time').textContent = remaining;
+  document.getElementById('hud-lives').textContent = lives;
+  return remaining;
+}
+
+function spawnItem() {
+  const isBomb = Math.random() < 0.18;
+  const item = isBomb ? BOMB : FRUITS[Math.floor(Math.random() * FRUITS.length)];
+  const size = 36;
+  items.push({
+    x: size + Math.random() * (W - size * 2),
+    y: -size,
+    size,
+    vy: 2 + Math.random() * 2,
+    emoji: item.emoji,
+    points: item.points,
+    isBomb: isBomb,
+    rotation: Math.random() * Math.PI * 2,
+    rotSpeed: (Math.random() - 0.5) * 0.08,
+  });
+}
+
+function addParticles(x, y, color, count) {
+  for (let i = 0; i < count; i++) {
+    particles.push({
+      x, y,
+      vx: (Math.random() - 0.5) * 6,
+      vy: (Math.random() - 0.5) * 6 - 2,
+      life: 1,
+      color,
+      r: 2 + Math.random() * 3,
+    });
+  }
+}
+
+function loop() {
+  if (!gameRunning) return;
+  ctx.clearRect(0, 0, W, H);
+
+  // Background gradient
+  const bg = ctx.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, '#0a0a1a');
+  bg.addColorStop(1, '#12122a');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, W, H);
+
+  const remaining = updateHUD();
+  if (remaining <= 0 || lives <= 0) { gameOver(); return; }
+
+  // Input
+  if (keys['ArrowLeft'] || keys['a']) basket.x -= basket.speed;
+  if (keys['ArrowRight'] || keys['d']) basket.x += basket.speed;
+  if (touchX !== null) {
+    const target = touchX - basket.w / 2;
+    basket.x += (target - basket.x) * 0.15;
+  }
+  basket.x = Math.max(0, Math.min(W - basket.w, basket.x));
+
+  // Speed ramp
+  const elapsed = (Date.now() - startTime) / 1000;
+  spawnInterval = Math.max(18, 45 - elapsed * 0.4);
+
+  // Spawn
+  spawnTimer++;
+  if (spawnTimer >= spawnInterval) {
+    spawnTimer = 0;
+    spawnItem();
+  }
+
+  // Update + draw items
+  for (let i = items.length - 1; i >= 0; i--) {
+    const it = items[i];
+    it.y += it.vy;
+    it.rotation += it.rotSpeed;
+
+    // Check catch
+    if (
+      it.y + it.size > basket.y &&
+      it.y < basket.y + basket.h &&
+      it.x + it.size > basket.x &&
+      it.x < basket.x + basket.w
+    ) {
+      if (it.isBomb) {
+        lives--;
+        addParticles(it.x, it.y, '#ff2770', 15);
+        // Flash screen
+        ctx.fillStyle = 'rgba(255,39,112,0.15)';
+        ctx.fillRect(0, 0, W, H);
+      } else {
+        score += it.points;
+        caught++;
+        addParticles(it.x, it.y, '#00f5d4', 10);
+      }
+      items.splice(i, 1);
+      continue;
+    }
+
+    // Off screen
+    if (it.y > H + 50) {
+      items.splice(i, 1);
+      continue;
+    }
+
+    // Draw
+    ctx.save();
+    ctx.translate(it.x + it.size / 2, it.y + it.size / 2);
+    ctx.rotate(it.rotation);
+    ctx.font = it.size + 'px serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    if (it.isBomb) {
+      ctx.shadowColor = '#ff2770';
+      ctx.shadowBlur = 12;
+    } else if (it.points >= 50) {
+      ctx.shadowColor = '#FFD700';
+      ctx.shadowBlur = 15;
+    }
+    ctx.fillText(it.emoji, 0, 0);
+    ctx.restore();
+  }
+
+  // Particles
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx;
+    p.y += p.vy;
+    p.vy += 0.15;
+    p.life -= 0.025;
+    if (p.life <= 0) { particles.splice(i, 1); continue; }
+    ctx.globalAlpha = p.life;
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+
+  // Draw basket
+  ctx.save();
+  // Glow
+  ctx.shadowColor = '#7b2ff7';
+  ctx.shadowBlur = 20;
+  // Body
+  const grad = ctx.createLinearGradient(basket.x, basket.y, basket.x, basket.y + basket.h);
+  grad.addColorStop(0, '#7b2ff7');
+  grad.addColorStop(1, '#5a1fd0');
+  ctx.fillStyle = grad;
+  // Trapezoid basket shape
+  ctx.beginPath();
+  ctx.moveTo(basket.x + 8, basket.y);
+  ctx.lineTo(basket.x + basket.w - 8, basket.y);
+  ctx.lineTo(basket.x + basket.w, basket.y + basket.h);
+  ctx.lineTo(basket.x, basket.y + basket.h);
+  ctx.closePath();
+  ctx.fill();
+  // Rim
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = '#00f5d4';
+  ctx.fillRect(basket.x + 4, basket.y, basket.w - 8, 5);
+  ctx.restore();
+
+  // Ground line
+  ctx.strokeStyle = 'rgba(123,47,247,0.2)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(0, H - 25);
+  ctx.lineTo(W, H - 25);
+  ctx.stroke();
+
+  animFrame = requestAnimationFrame(loop);
+}
+
+async function gameOver() {
+  gameRunning = false;
+  document.getElementById('hud').classList.add('hidden');
+  document.getElementById('stats-text').textContent = `Caught ${caught} fruits`;
+  document.getElementById('final-score').textContent = score;
+  document.getElementById('gameover-screen').classList.remove('hidden');
+  try { await PlayFunClient.submitScore(score); } catch (e) { console.error(e); }
+}
+</script>
+</body>
+</html>

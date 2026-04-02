@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="x-ogp-key" content="fa29b0ef-94e6-4a82-b20f-08336b32c6c8">
+<title>Type Racer - Play.fun</title>
+<script src="https://sdk.play.fun"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a1a; color: #fff;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    overflow: hidden; height: 100vh;
+    display: flex; align-items: center; justify-content: center;
+    flex-direction: column;
+  }
+  #hub-link {
+    position: fixed; top: 16px; right: 20px;
+    color: #00f5d4; text-decoration: none; font-size: 0.95em;
+    z-index: 100; opacity: 0.8; transition: opacity 0.2s;
+  }
+  #hub-link:hover { opacity: 1; }
+  .overlay {
+    position: fixed; inset: 0;
+    background: rgba(10,10,26,0.92);
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    z-index: 50; backdrop-filter: blur(6px);
+  }
+  .overlay.hidden { display: none; }
+  .overlay h1 {
+    font-size: 2.8em; margin-bottom: 10px;
+    background: linear-gradient(135deg, #7b2ff7, #00f5d4);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .overlay p { color: #aaa; margin-bottom: 8px; font-size: 1.1em; }
+  .overlay .score-display { font-size: 2em; color: #00f5d4; margin: 10px 0; }
+  .btn {
+    padding: 14px 50px; font-size: 1.1em; font-weight: bold;
+    border: none; border-radius: 8px; cursor: pointer;
+    background: linear-gradient(135deg, #7b2ff7, #00f5d4);
+    color: #fff; margin-top: 15px;
+    transition: transform 0.15s, box-shadow 0.15s;
+  }
+  .btn:hover { transform: scale(1.05); box-shadow: 0 0 20px rgba(0,245,212,0.4); }
+  #game-area {
+    display: none; flex-direction: column; align-items: center;
+    gap: 20px; width: 90%; max-width: 600px;
+  }
+  #game-area.active { display: flex; }
+  #top-bar {
+    display: flex; justify-content: space-between; width: 100%;
+    font-size: 1.1em;
+  }
+  #top-bar .val { color: #00f5d4; font-weight: bold; }
+  #timer-bar {
+    width: 100%; height: 6px; background: #1a1a3a;
+    border-radius: 3px; overflow: hidden;
+  }
+  #timer-fill {
+    height: 100%; background: linear-gradient(90deg, #7b2ff7, #00f5d4);
+    transition: width 0.3s linear; width: 100%;
+    border-radius: 3px;
+  }
+  #word-display {
+    font-size: 2.4em; font-weight: bold; letter-spacing: 2px;
+    min-height: 60px; display: flex; align-items: center;
+    text-shadow: 0 0 20px rgba(0,245,212,0.3);
+  }
+  #word-display .correct { color: #00f5d4; }
+  #word-display .wrong { color: #ff2770; }
+  #word-display .pending { color: #555; }
+  #input-box {
+    width: 100%; padding: 14px 20px; font-size: 1.3em;
+    background: #111133; border: 2px solid #333;
+    border-radius: 10px; color: #fff; text-align: center;
+    outline: none; transition: border-color 0.2s;
+    font-family: inherit;
+  }
+  #input-box:focus { border-color: #7b2ff7; box-shadow: 0 0 15px rgba(123,47,247,0.3); }
+  #input-box.wrong-flash { border-color: #ff2770; background: #1a0a15; }
+  #input-box.correct-flash { border-color: #00f5d4; background: #0a1a18; }
+  #stats-row {
+    display: flex; gap: 30px; color: #aaa; font-size: 0.95em;
+  }
+  #stats-row .val { color: #00f5d4; }
+  .combo-popup {
+    position: fixed; top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 3em; font-weight: bold; color: #00f5d4;
+    text-shadow: 0 0 30px rgba(0,245,212,0.6);
+    pointer-events: none; opacity: 0;
+    animation: comboAnim 0.6s ease-out forwards;
+    z-index: 30;
+  }
+  @keyframes comboAnim {
+    0% { opacity: 1; transform: translate(-50%, -50%) scale(0.5); }
+    50% { opacity: 1; transform: translate(-50%, -60%) scale(1.2); }
+    100% { opacity: 0; transform: translate(-50%, -80%) scale(1); }
+  }
+</style>
+</head>
+<body>
+<a id="hub-link" href="/">&#8592; Back to Hub</a>
+
+<div id="game-area">
+  <div id="top-bar">
+    <div>Time: <span class="val" id="hud-time">60</span>s</div>
+    <div>Score: <span class="val" id="hud-score">0</span></div>
+  </div>
+  <div id="timer-bar"><div id="timer-fill"></div></div>
+  <div id="word-display"></div>
+  <input type="text" id="input-box" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Type here...">
+  <div id="stats-row">
+    <div>Words: <span class="val" id="hud-words">0</span></div>
+    <div>Accuracy: <span class="val" id="hud-accuracy">100%</span></div>
+    <div>Combo: <span class="val" id="hud-combo">0</span></div>
+  </div>
+</div>
+
+<div class="overlay" id="start-screen">
+  <h1>Type Racer</h1>
+  <p>Type words as fast as you can!</p>
+  <p style="color:#666;font-size:0.9em;">60 seconds on the clock</p>
+  <button class="btn" id="start-btn">Play</button>
+</div>
+
+<div class="overlay hidden" id="game-over-screen">
+  <h1>Time's Up!</h1>
+  <div class="score-display" id="final-score">0</div>
+  <p id="final-msg"></p>
+  <p id="final-stats" style="color:#666;font-size:0.9em;"></p>
+  <button class="btn" id="restart-btn">Play Again</button>
+</div>
+
+<script src="/shared/game-client.js"></script>
+<script>
+PlayFunClient.init('type-racer', 'GAME_ID_HERE');
+
+const WORDS = [
+  'quantum','nebula','phoenix','crystal','shadow','velocity','cosmic','plasma','cipher','matrix',
+  'vortex','zenith','fusion','prism','neural','binary','echo','flux','glitch','pixel',
+  'orbit','surge','nova','pulse','blaze','spark','storm','drift','flash','void',
+  'neon','laser','turbo','swift','rapid','sonic','hyper','ultra','mega','omega',
+  'alpha','gamma','delta','sigma','theta','zeta','lambda','kappa','epsilon','beta',
+  'rocket','comet','galaxy','astral','lunar','solar','stellar','quasar','photon','proton',
+  'electron','neutron','nucleus','atom','molecule','element','compound','reaction','energy','force',
+  'gravity','magnetic','electric','thermal','kinetic','static','dynamic','entropy','catalyst','spectrum'
+];
+
+let currentWord, score, wordsTyped, correctChars, totalChars, combo, maxCombo;
+let timeLeft, timerInterval, gameRunning;
+const inputBox = document.getElementById('input-box');
+const wordDisplay = document.getElementById('word-display');
+
+function pickWord() {
+  currentWord = WORDS[Math.floor(Math.random() * WORDS.length)];
+  renderWord('');
+}
+
+function renderWord(typed) {
+  let html = '';
+  for (let i = 0; i < currentWord.length; i++) {
+    if (i < typed.length) {
+      if (typed[i] === currentWord[i]) html += `<span class="correct">${currentWord[i]}</span>`;
+      else html += `<span class="wrong">${currentWord[i]}</span>`;
+    } else {
+      html += `<span class="pending">${currentWord[i]}</span>`;
+    }
+  }
+  wordDisplay.innerHTML = html;
+}
+
+function showCombo(text) {
+  const el = document.createElement('div');
+  el.className = 'combo-popup';
+  el.textContent = text;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 600);
+}
+
+function updateStats() {
+  document.getElementById('hud-score').textContent = score;
+  document.getElementById('hud-words').textContent = wordsTyped;
+  document.getElementById('hud-combo').textContent = combo;
+  const acc = totalChars > 0 ? Math.round((correctChars / totalChars) * 100) : 100;
+  document.getElementById('hud-accuracy').textContent = acc + '%';
+}
+
+inputBox.addEventListener('input', () => {
+  if (!gameRunning) return;
+  const val = inputBox.value;
+  renderWord(val);
+
+  if (val === currentWord) {
+    wordsTyped++;
+    combo++;
+    if (combo > maxCombo) maxCombo = combo;
+    correctChars += currentWord.length;
+    totalChars += currentWord.length;
+
+    const comboBonus = Math.floor(combo / 5) * 5;
+    const wordScore = 10 + currentWord.length + comboBonus;
+    score += wordScore;
+
+    if (combo > 0 && combo % 5 === 0) showCombo(combo + 'x Combo!');
+
+    inputBox.value = '';
+    inputBox.classList.add('correct-flash');
+    setTimeout(() => inputBox.classList.remove('correct-flash'), 200);
+    pickWord();
+    updateStats();
+  } else if (val.length >= currentWord.length) {
+    // wrong word typed fully
+    totalChars += val.length;
+    let cCorrect = 0;
+    for (let i = 0; i < Math.min(val.length, currentWord.length); i++) {
+      if (val[i] === currentWord[i]) cCorrect++;
+    }
+    correctChars += cCorrect;
+    combo = 0;
+    inputBox.value = '';
+    inputBox.classList.add('wrong-flash');
+    setTimeout(() => inputBox.classList.remove('wrong-flash'), 200);
+    pickWord();
+    updateStats();
+  }
+});
+
+function tick() {
+  timeLeft--;
+  document.getElementById('hud-time').textContent = timeLeft;
+  document.getElementById('timer-fill').style.width = (timeLeft / 60 * 100) + '%';
+  if (timeLeft <= 10) {
+    document.getElementById('timer-fill').style.background = 'linear-gradient(90deg, #ff2770, #ff8c00)';
+  }
+  if (timeLeft <= 0) endGame();
+}
+
+function startGame() {
+  document.getElementById('start-screen').classList.add('hidden');
+  document.getElementById('game-over-screen').classList.add('hidden');
+  document.getElementById('game-area').classList.add('active');
+  score = 0; wordsTyped = 0; correctChars = 0; totalChars = 0;
+  combo = 0; maxCombo = 0; timeLeft = 60;
+  document.getElementById('timer-fill').style.background = 'linear-gradient(90deg, #7b2ff7, #00f5d4)';
+  document.getElementById('timer-fill').style.width = '100%';
+  inputBox.value = '';
+  pickWord();
+  updateStats();
+  document.getElementById('hud-time').textContent = '60';
+  gameRunning = true;
+  timerInterval = setInterval(tick, 1000);
+  inputBox.focus();
+}
+
+async function endGame() {
+  gameRunning = false;
+  clearInterval(timerInterval);
+  const acc = totalChars > 0 ? Math.round((correctChars / totalChars) * 100) : 100;
+  const accBonus = Math.round(score * (acc / 100) * 0.2);
+  score += accBonus;
+  document.getElementById('game-area').classList.remove('active');
+  document.getElementById('final-score').textContent = score;
+  document.getElementById('final-msg').textContent = wordsTyped > 20 ? 'Speed demon!' : wordsTyped > 10 ? 'Nice typing!' : 'Keep practicing!';
+  document.getElementById('final-stats').textContent = `${wordsTyped} words | ${acc}% accuracy | ${maxCombo} max combo`;
+  document.getElementById('game-over-screen').classList.remove('hidden');
+  try { await PlayFunClient.submitScore(score); } catch(e) { console.warn(e); }
+}
+
+document.getElementById('start-btn').addEventListener('click', startGame);
+document.getElementById('restart-btn').addEventListener('click', startGame);
+</script>
+</body>
+</html>

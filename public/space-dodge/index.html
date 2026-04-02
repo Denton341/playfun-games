@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="x-ogp-key" content="fa29b0ef-94e6-4a82-b20f-08336b32c6c8">
+<title>Space Dodge</title>
+<script src="https://sdk.play.fun"></script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #0a0a1a;
+  color: #fff;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  overflow: hidden;
+  height: 100vh;
+  width: 100vw;
+}
+canvas { display: block; }
+.btn {
+  padding: 14px 50px; font-size: 1.1em; font-weight: bold; border: none;
+  border-radius: 8px; cursor: pointer;
+  background: linear-gradient(135deg, #7b2ff7, #00f5d4);
+  color: #fff; margin-top: 15px;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+.btn:hover { transform: scale(1.05); box-shadow: 0 0 25px rgba(0,245,212,0.4); }
+#hubLink {
+  position: fixed; top: 15px; right: 20px; z-index: 100;
+  color: #00f5d4; text-decoration: none; font-size: 0.95em;
+  opacity: 0.8; transition: opacity 0.2s;
+}
+#hubLink:hover { opacity: 1; }
+.overlay {
+  position: fixed; inset: 0; background: rgba(10,10,26,0.92);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  z-index: 50; text-align: center;
+}
+.overlay h1 {
+  font-size: 2.8em; margin-bottom: 10px;
+  background: linear-gradient(135deg, #7b2ff7, #00f5d4);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+}
+.overlay p { color: #aaa; font-size: 1.1em; margin: 5px 0; }
+.score-display {
+  font-size: 2em; color: #00f5d4; margin: 15px 0;
+  text-shadow: 0 0 20px rgba(0,245,212,0.5);
+}
+.hud {
+  position: fixed; top: 15px; left: 20px; z-index: 30;
+  font-size: 1.2em; color: #00f5d4;
+  text-shadow: 0 0 10px rgba(0,245,212,0.4);
+}
+.hidden { display: none !important; }
+</style>
+</head>
+<body>
+<a id="hubLink" href="/">&#8592; Back to Hub</a>
+<div class="hud" id="hud">
+  <div>Score: <span id="scoreText">0</span></div>
+  <div>Speed: <span id="speedText">1x</span></div>
+</div>
+<canvas id="gameCanvas"></canvas>
+
+<div class="overlay" id="startScreen">
+  <h1>Space Dodge</h1>
+  <p>Dodge asteroids as they fall faster and faster!</p>
+  <p style="color:#666; font-size:0.9em;">Arrow keys / Tap sides to move</p>
+  <button class="btn" id="startBtn">Play</button>
+</div>
+
+<div class="overlay hidden" id="gameOverScreen">
+  <h1>Game Over</h1>
+  <div class="score-display" id="finalScore">0</div>
+  <p id="gameOverMsg">Nice try!</p>
+  <button class="btn" id="restartBtn">Play Again</button>
+</div>
+
+<script src="/shared/game-client.js"></script>
+<script>
+PlayFunClient.init('space-dodge', 'GAME_ID_HERE');
+
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+const SHIP_W = 40, SHIP_H = 50;
+let ship = { x: 0, y: 0, speed: 6 };
+let asteroids = [];
+let particles = [];
+let stars = [];
+let score = 0;
+let gameTime = 0;
+let speedMult = 1;
+let running = false;
+let animId;
+let keys = {};
+
+// Stars
+for (let i = 0; i < 120; i++) {
+  stars.push({ x: Math.random() * 2000, y: Math.random() * 2000, s: Math.random() * 2 + 0.5, a: Math.random() });
+}
+
+function resetGame() {
+  ship.x = W / 2;
+  ship.y = H - 80;
+  asteroids = [];
+  particles = [];
+  score = 0;
+  gameTime = 0;
+  speedMult = 1;
+}
+
+function spawnAsteroid() {
+  let size = 15 + Math.random() * 30;
+  asteroids.push({
+    x: Math.random() * (W - size * 2) + size,
+    y: -size,
+    size: size,
+    speed: (2 + Math.random() * 2) * speedMult,
+    rot: Math.random() * Math.PI * 2,
+    rotSpeed: (Math.random() - 0.5) * 0.05,
+    vertices: generateAsteroidShape(size)
+  });
+}
+
+function generateAsteroidShape(size) {
+  let pts = [];
+  let n = 7 + Math.floor(Math.random() * 5);
+  for (let i = 0; i < n; i++) {
+    let angle = (i / n) * Math.PI * 2;
+    let r = size * (0.7 + Math.random() * 0.3);
+    pts.push({ x: Math.cos(angle) * r, y: Math.sin(angle) * r });
+  }
+  return pts;
+}
+
+function spawnExplosion(x, y) {
+  for (let i = 0; i < 30; i++) {
+    let angle = Math.random() * Math.PI * 2;
+    let speed = 1 + Math.random() * 4;
+    particles.push({
+      x, y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      life: 1,
+      color: Math.random() > 0.5 ? '#ff2770' : '#00f5d4',
+      size: 2 + Math.random() * 3
+    });
+  }
+}
+
+function drawShip(x, y) {
+  ctx.save();
+  ctx.translate(x, y);
+  // Glow
+  ctx.shadowColor = '#00f5d4';
+  ctx.shadowBlur = 20;
+  // Body
+  ctx.fillStyle = '#00f5d4';
+  ctx.beginPath();
+  ctx.moveTo(0, -SHIP_H / 2);
+  ctx.lineTo(-SHIP_W / 2, SHIP_H / 2);
+  ctx.lineTo(0, SHIP_H / 2 - 10);
+  ctx.lineTo(SHIP_W / 2, SHIP_H / 2);
+  ctx.closePath();
+  ctx.fill();
+  // Cockpit
+  ctx.fillStyle = '#7b2ff7';
+  ctx.beginPath();
+  ctx.arc(0, 0, 6, 0, Math.PI * 2);
+  ctx.fill();
+  // Thruster
+  ctx.shadowColor = '#ff2770';
+  ctx.fillStyle = '#ff2770';
+  ctx.globalAlpha = 0.6 + Math.random() * 0.4;
+  ctx.beginPath();
+  ctx.moveTo(-8, SHIP_H / 2 - 8);
+  ctx.lineTo(0, SHIP_H / 2 + 10 + Math.random() * 10);
+  ctx.lineTo(8, SHIP_H / 2 - 8);
+  ctx.closePath();
+  ctx.fill();
+  ctx.globalAlpha = 1;
+  ctx.shadowBlur = 0;
+  ctx.restore();
+}
+
+function drawAsteroid(a) {
+  ctx.save();
+  ctx.translate(a.x, a.y);
+  ctx.rotate(a.rot);
+  ctx.shadowColor = '#ff2770';
+  ctx.shadowBlur = 8;
+  ctx.fillStyle = '#3a2a4a';
+  ctx.strokeStyle = '#ff2770';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(a.vertices[0].x, a.vertices[0].y);
+  for (let i = 1; i < a.vertices.length; i++) ctx.lineTo(a.vertices[i].x, a.vertices[i].y);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+  ctx.restore();
+}
+
+let touchX = null;
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  touchX = e.touches[0].clientX;
+});
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  touchX = e.touches[0].clientX;
+});
+canvas.addEventListener('touchend', () => { touchX = null; });
+document.addEventListener('keydown', e => { keys[e.key] = true; });
+document.addEventListener('keyup', e => { keys[e.key] = false; });
+
+function update(dt) {
+  gameTime += dt;
+  speedMult = 1 + gameTime / 15;
+  score = Math.floor(gameTime * 10 * speedMult);
+
+  // Ship movement
+  let dx = 0;
+  if (keys['ArrowLeft'] || keys['a']) dx = -ship.speed;
+  if (keys['ArrowRight'] || keys['d']) dx = ship.speed;
+  if (touchX !== null) {
+    if (touchX < ship.x - 20) dx = -ship.speed;
+    else if (touchX > ship.x + 20) dx = ship.speed;
+  }
+  ship.x += dx;
+  ship.x = Math.max(SHIP_W / 2, Math.min(W - SHIP_W / 2, ship.x));
+
+  // Spawn asteroids
+  let spawnRate = Math.max(0.01, 0.04 - gameTime * 0.001);
+  if (Math.random() < spawnRate * speedMult) spawnAsteroid();
+
+  // Update asteroids
+  for (let i = asteroids.length - 1; i >= 0; i--) {
+    let a = asteroids[i];
+    a.y += a.speed;
+    a.rot += a.rotSpeed;
+    if (a.y > H + a.size) { asteroids.splice(i, 1); continue; }
+    // Collision
+    let dx2 = ship.x - a.x, dy2 = ship.y - a.y;
+    let dist = Math.sqrt(dx2 * dx2 + dy2 * dy2);
+    if (dist < a.size + 15) {
+      spawnExplosion(ship.x, ship.y);
+      gameOver();
+      return;
+    }
+  }
+
+  // Particles
+  for (let i = particles.length - 1; i >= 0; i--) {
+    let p = particles[i];
+    p.x += p.vx; p.y += p.vy; p.life -= 0.02;
+    if (p.life <= 0) particles.splice(i, 1);
+  }
+
+  document.getElementById('scoreText').textContent = score;
+  document.getElementById('speedText').textContent = speedMult.toFixed(1) + 'x';
+}
+
+function draw() {
+  ctx.fillStyle = '#0a0a1a';
+  ctx.fillRect(0, 0, W, H);
+  // Stars
+  for (let s of stars) {
+    let sy = (s.y + gameTime * 20 * s.s) % H;
+    ctx.fillStyle = `rgba(255,255,255,${0.3 + s.a * 0.5})`;
+    ctx.fillRect(s.x % W, sy, s.s, s.s);
+  }
+  // Asteroids
+  for (let a of asteroids) drawAsteroid(a);
+  // Ship
+  if (running) drawShip(ship.x, ship.y);
+  // Particles
+  for (let p of particles) {
+    ctx.globalAlpha = p.life;
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
+let lastTime = 0;
+function loop(ts) {
+  let dt = Math.min((ts - lastTime) / 1000, 0.05);
+  lastTime = ts;
+  if (running) update(dt);
+  draw();
+  animId = requestAnimationFrame(loop);
+}
+
+async function gameOver() {
+  running = false;
+  document.getElementById('hud').classList.add('hidden');
+  document.getElementById('finalScore').textContent = score;
+  let msg = score > 500 ? 'Amazing pilot!' : score > 200 ? 'Great dodging!' : 'Nice try!';
+  document.getElementById('gameOverMsg').textContent = msg;
+  document.getElementById('gameOverScreen').classList.remove('hidden');
+  try { await PlayFunClient.submitScore(score); } catch(e) {}
+}
+
+function startGame() {
+  document.getElementById('startScreen').classList.add('hidden');
+  document.getElementById('gameOverScreen').classList.add('hidden');
+  document.getElementById('hud').classList.remove('hidden');
+  resetGame();
+  running = true;
+}
+
+document.getElementById('startBtn').addEventListener('click', startGame);
+document.getElementById('restartBtn').addEventListener('click', startGame);
+
+lastTime = performance.now();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

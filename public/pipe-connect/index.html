@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="x-ogp-key" content="fa29b0ef-94e6-4a82-b20f-08336b32c6c8">
+<title>Pipe Connect - Flow Puzzle</title>
+<script src="https://sdk.play.fun"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0a0a1a; color: #fff; font-family: 'Segoe UI', system-ui, sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+  .container { text-align: center; }
+  #hud { display: flex; justify-content: space-between; width: 350px; margin-bottom: 10px; }
+  .hud-item .label { color: #888; font-size: 12px; text-transform: uppercase; }
+  .hud-item .value { color: #00f5d4; font-size: 1.8em; font-weight: bold; }
+  canvas { border: 2px solid #2a2a4a; border-radius: 8px; cursor: pointer; }
+  .controls-hint { color: #555; font-size: 12px; margin-top: 10px; }
+  .overlay { position: fixed; top:0; left:0; width:100%; height:100%; background:rgba(10,10,26,0.95); display:flex; align-items:center; justify-content:center; z-index:10; }
+  .overlay-box { text-align: center; padding: 40px; }
+  .overlay-box h1 { color: #00f5d4; font-size: 2.5em; }
+  .overlay-box h2 { font-size: 2em; }
+  .overlay-box p { color: #888; margin: 8px 0; }
+  .big-score { color: #00f5d4; font-size: 3em; font-weight: bold; }
+  .btn { padding: 14px 50px; font-size: 1.1em; font-weight: bold; border: none; border-radius: 8px; cursor: pointer; background: linear-gradient(135deg, #7b2ff7, #00f5d4); color: #fff; margin-top: 15px; }
+  .back-link { position: fixed; top: 20px; right: 20px; color: #555; text-decoration: none; font-size: 14px; z-index: 20; }
+</style>
+</head>
+<body>
+<a href="/" class="back-link">Back to Hub</a>
+<div class="container">
+  <div id="hud">
+    <div class="hud-item"><div class="label">Level</div><div class="value" id="level">1</div></div>
+    <div class="hud-item"><div class="label">Score</div><div class="value" id="score">0</div></div>
+    <div class="hud-item"><div class="label">Moves</div><div class="value" id="moves">0</div></div>
+  </div>
+  <canvas id="game" width="350" height="350"></canvas>
+  <div class="controls-hint">Click tiles to rotate them. Connect all pipes!</div>
+</div>
+<div class="overlay" id="start-overlay">
+  <div class="overlay-box">
+    <h1>Pipe Connect</h1>
+    <p>Rotate pipe tiles to connect the flow from start to end!</p>
+    <button class="btn" onclick="startGame()">PLAY</button>
+  </div>
+</div>
+<div class="overlay" id="win-overlay" style="display:none;">
+  <div class="overlay-box">
+    <h2>Connected!</h2>
+    <div class="big-score" id="final-score">0</div>
+    <p>Level <span id="win-level">1</span> complete!</p>
+    <button class="btn" onclick="nextLevel()">NEXT LEVEL</button>
+  </div>
+</div>
+<script src="/shared/game-client.js"></script>
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const SIZE = 7, CELL = 50;
+
+// Pipe types: connections as [top, right, bottom, left]
+const PIPE_TYPES = [
+  { name: 'straight-h', conn: [0,1,0,1] },
+  { name: 'straight-v', conn: [1,0,1,0] },
+  { name: 'bend-tr', conn: [1,1,0,0] },
+  { name: 'bend-rb', conn: [0,1,1,0] },
+  { name: 'bend-bl', conn: [0,0,1,1] },
+  { name: 'bend-lt', conn: [1,0,0,1] },
+  { name: 'tee-t', conn: [1,1,0,1] },
+  { name: 'tee-r', conn: [1,1,1,0] },
+  { name: 'tee-b', conn: [0,1,1,1] },
+  { name: 'tee-l', conn: [1,0,1,1] },
+  { name: 'cross', conn: [1,1,1,1] },
+];
+
+let grid, level, score, moves, startPos, endPos;
+
+function rotatePipe(conn) {
+  return [conn[3], conn[0], conn[1], conn[2]];
+}
+
+function generateLevel(lvl) {
+  const gs = SIZE;
+  grid = Array.from({length: gs}, () => Array.from({length: gs}, () => ({ conn: [0,0,0,0], connected: false })));
+
+  // Create a path from start to end using random walk
+  startPos = { r: 0, c: Math.floor(Math.random() * gs) };
+  endPos = { r: gs - 1, c: Math.floor(Math.random() * gs) };
+
+  const path = [];
+  const visited = new Set();
+  let cur = { ...startPos };
+  visited.add(`${cur.r},${cur.c}`);
+  path.push({ ...cur });
+
+  while (cur.r !== endPos.r || cur.c !== endPos.c) {
+    const dirs = [];
+    if (cur.r > 0 && !visited.has(`${cur.r-1},${cur.c}`)) dirs.push({ dr: -1, dc: 0 });
+    if (cur.r < gs-1 && !visited.has(`${cur.r+1},${cur.c}`)) dirs.push({ dr: 1, dc: 0 });
+    if (cur.c > 0 && !visited.has(`${cur.r},${cur.c-1}`)) dirs.push({ dr: 0, dc: -1 });
+    if (cur.c < gs-1 && !visited.has(`${cur.r},${cur.c+1}`)) dirs.push({ dr: 0, dc: 1 });
+
+    // Bias towards end
+    dirs.sort((a, b) => {
+      const da = Math.abs(cur.r + a.dr - endPos.r) + Math.abs(cur.c + a.dc - endPos.c);
+      const db = Math.abs(cur.r + b.dr - endPos.r) + Math.abs(cur.c + b.dc - endPos.c);
+      return da - db + (Math.random() - 0.5) * 3;
+    });
+
+    if (dirs.length === 0) break;
+    const d = dirs[0];
+    cur = { r: cur.r + d.dr, c: cur.c + d.dc };
+    visited.add(`${cur.r},${cur.c}`);
+    path.push({ ...cur });
+  }
+
+  // Set connections along path
+  for (let i = 0; i < path.length; i++) {
+    const p = path[i];
+    const conn = [0, 0, 0, 0]; // top, right, bottom, left
+    if (i > 0) {
+      const prev = path[i-1];
+      if (prev.r < p.r) conn[0] = 1;
+      if (prev.r > p.r) conn[2] = 1;
+      if (prev.c > p.c) conn[1] = 1;
+      if (prev.c < p.c) conn[3] = 1;
+    }
+    if (i < path.length - 1) {
+      const next = path[i+1];
+      if (next.r < p.r) conn[0] = 1;
+      if (next.r > p.r) conn[2] = 1;
+      if (next.c > p.c) conn[1] = 1;
+      if (next.c < p.c) conn[3] = 1;
+    }
+    grid[p.r][p.c].conn = conn;
+    grid[p.r][p.c].onPath = true;
+  }
+
+  // Fill empty cells with random pipes
+  for (let r = 0; r < gs; r++)
+    for (let c = 0; c < gs; c++)
+      if (!grid[r][c].onPath) {
+        const type = PIPE_TYPES[Math.floor(Math.random() * PIPE_TYPES.length)];
+        grid[r][c].conn = [...type.conn];
+      }
+
+  // Scramble all by random rotations
+  for (let r = 0; r < gs; r++)
+    for (let c = 0; c < gs; c++) {
+      const rots = Math.floor(Math.random() * 4);
+      for (let i = 0; i < rots; i++) grid[r][c].conn = rotatePipe(grid[r][c].conn);
+    }
+}
+
+function startGame() {
+  document.getElementById('start-overlay').style.display = 'none';
+  document.getElementById('win-overlay').style.display = 'none';
+  level = 1; score = 0; moves = 0;
+  generateLevel(level);
+  updateHUD();
+  draw();
+}
+
+function nextLevel() {
+  document.getElementById('win-overlay').style.display = 'none';
+  level++;
+  moves = 0;
+  generateLevel(level);
+  updateHUD();
+  draw();
+}
+
+function updateHUD() {
+  document.getElementById('level').textContent = level;
+  document.getElementById('score').textContent = score;
+  document.getElementById('moves').textContent = moves;
+}
+
+canvas.addEventListener('click', e => {
+  const rect = canvas.getBoundingClientRect();
+  const c = Math.floor((e.clientX - rect.left) / CELL);
+  const r = Math.floor((e.clientY - rect.top) / CELL);
+  if (r < 0 || r >= SIZE || c < 0 || c >= SIZE) return;
+
+  grid[r][c].conn = rotatePipe(grid[r][c].conn);
+  moves++;
+  updateHUD();
+  checkConnected();
+  draw();
+});
+
+function checkConnected() {
+  // BFS from start
+  const visited = new Set();
+  const queue = [`${startPos.r},${startPos.c}`];
+  visited.add(queue[0]);
+
+  while (queue.length > 0) {
+    const key = queue.shift();
+    const [r, c] = key.split(',').map(Number);
+    const conn = grid[r][c].conn;
+    const dirs = [[-1,0,0,2],[0,1,1,3],[1,0,2,0],[0,-1,3,1]]; // dr,dc,myDir,theirDir
+
+    for (const [dr, dc, myDir, theirDir] of dirs) {
+      const nr = r + dr, nc = c + dc;
+      if (nr < 0 || nr >= SIZE || nc < 0 || nc >= SIZE) continue;
+      if (visited.has(`${nr},${nc}`)) continue;
+      if (conn[myDir] && grid[nr][nc].conn[theirDir]) {
+        visited.add(`${nr},${nc}`);
+        queue.push(`${nr},${nc}`);
+      }
+    }
+  }
+
+  // Mark connected
+  for (let r = 0; r < SIZE; r++)
+    for (let c = 0; c < SIZE; c++)
+      grid[r][c].connected = visited.has(`${r},${c}`);
+
+  // Check win
+  if (visited.has(`${endPos.r},${endPos.c}`)) {
+    score += Math.max(10, 100 - moves) * level;
+    updateHUD();
+    document.getElementById('final-score').textContent = score;
+    document.getElementById('win-level').textContent = level;
+    document.getElementById('win-overlay').style.display = 'flex';
+    PlayFunClient.submitScore(score);
+  }
+}
+
+function draw() {
+  ctx.fillStyle = '#0a0a1a';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  for (let r = 0; r < SIZE; r++)
+    for (let c = 0; c < SIZE; c++) {
+      const x = c * CELL, y = r * CELL;
+      const cell = grid[r][c];
+      const cx = x + CELL/2, cy = y + CELL/2;
+
+      // Background
+      ctx.fillStyle = (r + c) % 2 === 0 ? '#111122' : '#0e0e1e';
+      ctx.fillRect(x, y, CELL, CELL);
+
+      // Start/End markers
+      if (r === startPos.r && c === startPos.c) {
+        ctx.fillStyle = 'rgba(0,245,212,0.15)';
+        ctx.fillRect(x, y, CELL, CELL);
+      }
+      if (r === endPos.r && c === endPos.c) {
+        ctx.fillStyle = 'rgba(255,39,112,0.15)';
+        ctx.fillRect(x, y, CELL, CELL);
+      }
+
+      // Pipe
+      const color = cell.connected ? '#00f5d4' : '#555';
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 4;
+      ctx.lineCap = 'round';
+
+      const conn = cell.conn;
+      if (conn[0]) { ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx, y); ctx.stroke(); }
+      if (conn[1]) { ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(x + CELL, cy); ctx.stroke(); }
+      if (conn[2]) { ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx, y + CELL); ctx.stroke(); }
+      if (conn[3]) { ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(x, cy); ctx.stroke(); }
+
+      // Center dot
+      ctx.fillStyle = color;
+      ctx.beginPath(); ctx.arc(cx, cy, 4, 0, Math.PI * 2); ctx.fill();
+    }
+}
+
+PlayFunClient.init('pipe-connect', 'GAME_ID_HERE');
+</script>
+</body>
+</html>

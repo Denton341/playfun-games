@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="x-ogp-key" content="fa29b0ef-94e6-4a82-b20f-08336b32c6c8">
+<title>Emoji Match - Play.fun</title>
+<script src="https://sdk.play.fun"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a1a; color: #fff;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    min-height: 100vh; display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+  }
+  .hub-link {
+    position: fixed; top: 16px; right: 20px; z-index: 1000;
+    color: #00f5d4; text-decoration: none; font-size: 0.95em;
+    opacity: 0.8; transition: opacity 0.2s;
+  }
+  .hub-link:hover { opacity: 1; }
+  .btn {
+    padding: 14px 50px; font-size: 1.1em; font-weight: bold;
+    border: none; border-radius: 8px; cursor: pointer;
+    background: linear-gradient(135deg, #7b2ff7, #00f5d4);
+    color: #fff; margin-top: 15px;
+    transition: transform 0.15s, box-shadow 0.15s;
+  }
+  .btn:hover { transform: translateY(-2px); box-shadow: 0 6px 25px rgba(123,47,247,0.5); }
+  .overlay {
+    position: fixed; inset: 0; background: rgba(10,10,26,0.95);
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: center; z-index: 100; animation: fadeIn 0.3s ease;
+  }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  .overlay h1 {
+    font-size: 3em; margin-bottom: 10px;
+    background: linear-gradient(135deg, #7b2ff7, #00f5d4);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .overlay p { color: #aaa; font-size: 1.1em; margin-bottom: 5px; max-width: 500px; text-align: center; }
+  .overlay .score-display {
+    font-size: 2.5em; font-weight: bold; color: #00f5d4;
+    text-shadow: 0 0 20px rgba(0,245,212,0.5); margin: 15px 0;
+  }
+  .hud {
+    position: fixed; top: 16px; left: 20px; z-index: 50;
+    font-size: 1em; color: #aaa;
+  }
+  .hud span { color: #00f5d4; font-weight: bold; }
+  .grid {
+    display: grid; grid-template-columns: repeat(4, 1fr);
+    gap: 12px; padding: 20px;
+    max-width: 420px; width: 100%;
+  }
+  .card {
+    aspect-ratio: 1; border-radius: 12px;
+    background: linear-gradient(135deg, #1a1a3a, #2a2a5a);
+    border: 2px solid rgba(123,47,247,0.3);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 2.5em; cursor: pointer;
+    transition: transform 0.3s, border-color 0.3s, box-shadow 0.3s;
+    user-select: none; position: relative;
+    transform-style: preserve-3d;
+  }
+  .card:hover:not(.flipped):not(.matched) {
+    border-color: #7b2ff7;
+    box-shadow: 0 0 15px rgba(123,47,247,0.3);
+    transform: scale(1.05);
+  }
+  .card .face { opacity: 0; transition: opacity 0.2s; }
+  .card .back {
+    position: absolute; font-size: 1.2em; color: #7b2ff7;
+    opacity: 0.6; transition: opacity 0.2s;
+  }
+  .card.flipped .face { opacity: 1; }
+  .card.flipped .back { opacity: 0; }
+  .card.flipped {
+    border-color: #00f5d4;
+    box-shadow: 0 0 20px rgba(0,245,212,0.3);
+    transform: scale(1.05);
+  }
+  .card.matched {
+    border-color: #00f5d4;
+    background: linear-gradient(135deg, rgba(0,245,212,0.15), rgba(123,47,247,0.15));
+    box-shadow: 0 0 15px rgba(0,245,212,0.2);
+  }
+  .card.matched .face { opacity: 1; }
+  .card.matched .back { opacity: 0; }
+  .card.wrong {
+    border-color: #ff2770;
+    box-shadow: 0 0 20px rgba(255,39,112,0.4);
+    animation: shake 0.3s ease;
+  }
+  @keyframes shake {
+    25% { transform: translateX(-4px); }
+    50% { transform: translateX(4px); }
+    75% { transform: translateX(-4px); }
+  }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<a href="/" class="hub-link">&#8592; Back to Hub</a>
+<div class="hud hidden" id="hud">
+  Moves: <span id="hud-moves">0</span> &nbsp;|&nbsp;
+  Pairs: <span id="hud-pairs">0</span>/8 &nbsp;|&nbsp;
+  Time: <span id="hud-time">0s</span>
+</div>
+
+<div id="start-screen" class="overlay">
+  <h1>Emoji Match</h1>
+  <p>Flip cards and find matching emoji pairs!</p>
+  <p>Fewer moves + faster time = higher score.</p>
+  <button class="btn" id="start-btn">Start Game</button>
+</div>
+
+<div id="gameover-screen" class="overlay hidden">
+  <h1>Complete!</h1>
+  <p id="stats-text">0 moves in 0 seconds</p>
+  <p>Score</p>
+  <div class="score-display" id="final-score">0</div>
+  <button class="btn" id="restart-btn">Play Again</button>
+</div>
+
+<div class="grid hidden" id="grid"></div>
+
+<script src="/shared/game-client.js"></script>
+<script>
+PlayFunClient.init('emoji-match', 'GAME_ID_HERE');
+
+const EMOJIS = ['🎮','🚀','🔥','💎','🌟','🎯','🧩','👾','🎨','🏆','⚡','🍀','🦊','🐉','🎵','🌈'];
+const GRID_SIZE = 16;
+const PAIRS = 8;
+
+let cards = [];
+let flipped = [];
+let matched = 0;
+let moves = 0;
+let locked = false;
+let startTime = 0;
+let timerInterval = null;
+
+const grid = document.getElementById('grid');
+const hudMoves = document.getElementById('hud-moves');
+const hudPairs = document.getElementById('hud-pairs');
+const hudTime = document.getElementById('hud-time');
+
+document.getElementById('start-btn').addEventListener('click', startGame);
+document.getElementById('restart-btn').addEventListener('click', startGame);
+
+function shuffle(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+function startGame() {
+  document.getElementById('start-screen').classList.add('hidden');
+  document.getElementById('gameover-screen').classList.add('hidden');
+  document.getElementById('hud').classList.remove('hidden');
+  grid.classList.remove('hidden');
+
+  matched = 0; moves = 0; flipped = []; locked = false;
+  hudMoves.textContent = '0';
+  hudPairs.textContent = '0';
+
+  // Pick 8 random emojis, duplicate for pairs
+  const selected = shuffle([...EMOJIS]).slice(0, PAIRS);
+  cards = shuffle([...selected, ...selected]);
+
+  grid.innerHTML = '';
+  cards.forEach((emoji, i) => {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.dataset.index = i;
+    card.innerHTML = `<span class="face">${emoji}</span><span class="back">?</span>`;
+    card.addEventListener('click', () => flipCard(i, card));
+    grid.appendChild(card);
+  });
+
+  startTime = Date.now();
+  clearInterval(timerInterval);
+  timerInterval = setInterval(() => {
+    hudTime.textContent = Math.floor((Date.now() - startTime) / 1000) + 's';
+  }, 200);
+}
+
+function flipCard(index, el) {
+  if (locked) return;
+  if (el.classList.contains('flipped') || el.classList.contains('matched')) return;
+  if (flipped.length >= 2) return;
+
+  el.classList.add('flipped');
+  flipped.push({ index, el, emoji: cards[index] });
+
+  if (flipped.length === 2) {
+    moves++;
+    hudMoves.textContent = moves;
+    locked = true;
+
+    if (flipped[0].emoji === flipped[1].emoji) {
+      // Match!
+      setTimeout(() => {
+        flipped[0].el.classList.add('matched');
+        flipped[1].el.classList.add('matched');
+        flipped[0].el.classList.remove('flipped');
+        flipped[1].el.classList.remove('flipped');
+        matched++;
+        hudPairs.textContent = matched;
+        flipped = [];
+        locked = false;
+        if (matched === PAIRS) endGame();
+      }, 400);
+    } else {
+      // No match
+      setTimeout(() => {
+        flipped[0].el.classList.add('wrong');
+        flipped[1].el.classList.add('wrong');
+        setTimeout(() => {
+          flipped[0].el.classList.remove('flipped', 'wrong');
+          flipped[1].el.classList.remove('flipped', 'wrong');
+          flipped = [];
+          locked = false;
+        }, 500);
+      }, 600);
+    }
+  }
+}
+
+async function endGame() {
+  clearInterval(timerInterval);
+  const elapsed = Math.floor((Date.now() - startTime) / 1000);
+  // Score: base 5000, minus 100 per move over 8, plus time bonus
+  const movesPenalty = Math.max(0, moves - PAIRS) * 100;
+  const timeBonus = Math.max(0, 3000 - elapsed * 30);
+  const score = Math.max(100, 5000 - movesPenalty + timeBonus);
+
+  document.getElementById('stats-text').textContent = `${moves} moves in ${elapsed} seconds`;
+  document.getElementById('final-score').textContent = Math.round(score);
+  grid.classList.add('hidden');
+  document.getElementById('hud').classList.add('hidden');
+  document.getElementById('gameover-screen').classList.remove('hidden');
+  try { await PlayFunClient.submitScore(Math.round(score)); } catch (e) { console.error(e); }
+}
+</script>
+</body>
+</html>

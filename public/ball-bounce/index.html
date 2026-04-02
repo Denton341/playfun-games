@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="x-ogp-key" content="fa29b0ef-94e6-4a82-b20f-08336b32c6c8">
+<title>Ball Bounce</title>
+<script src="https://sdk.play.fun"></script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #0a0a1a; color: #fff;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  overflow: hidden; height: 100vh; width: 100vw;
+}
+canvas { display: block; }
+.btn {
+  padding: 14px 50px; font-size: 1.1em; font-weight: bold; border: none;
+  border-radius: 8px; cursor: pointer;
+  background: linear-gradient(135deg, #7b2ff7, #00f5d4);
+  color: #fff; margin-top: 15px;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+.btn:hover { transform: scale(1.05); box-shadow: 0 0 25px rgba(0,245,212,0.4); }
+#hubLink {
+  position: fixed; top: 15px; right: 20px; z-index: 100;
+  color: #00f5d4; text-decoration: none; font-size: 0.95em;
+  opacity: 0.8; transition: opacity 0.2s;
+}
+#hubLink:hover { opacity: 1; }
+.overlay {
+  position: fixed; inset: 0; background: rgba(10,10,26,0.92);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  z-index: 50; text-align: center;
+}
+.overlay h1 {
+  font-size: 2.8em; margin-bottom: 10px;
+  background: linear-gradient(135deg, #7b2ff7, #00f5d4);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+}
+.overlay p { color: #aaa; font-size: 1.1em; margin: 5px 0; }
+.score-display {
+  font-size: 2em; color: #00f5d4; margin: 15px 0;
+  text-shadow: 0 0 20px rgba(0,245,212,0.5);
+}
+.hidden { display: none !important; }
+</style>
+</head>
+<body>
+<a id="hubLink" href="/">&#8592; Back to Hub</a>
+<canvas id="gameCanvas"></canvas>
+
+<div class="overlay" id="startScreen">
+  <h1>Ball Bounce</h1>
+  <p>Classic Pong - first to 5 wins!</p>
+  <p style="color:#666; font-size:0.9em;">Arrow keys or touch to move your paddle</p>
+  <button class="btn" id="startBtn">Play</button>
+</div>
+
+<div class="overlay hidden" id="gameOverScreen">
+  <h1 id="resultTitle">Game Over</h1>
+  <div class="score-display" id="finalScore">0</div>
+  <p id="gameOverMsg">Good game!</p>
+  <button class="btn" id="restartBtn">Play Again</button>
+</div>
+
+<script src="/shared/game-client.js"></script>
+<script>
+PlayFunClient.init('ball-bounce', 'GAME_ID_HERE');
+
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+let W, H;
+function resize() { W = canvas.width = window.innerWidth; H = canvas.height = window.innerHeight; }
+resize();
+window.addEventListener('resize', resize);
+
+const PADDLE_W = 14, PADDLE_H = 90, BALL_R = 10;
+const WIN_SCORE = 5;
+
+let player = { y: 0, score: 0 };
+let ai = { y: 0, score: 0 };
+let ball = { x: 0, y: 0, vx: 0, vy: 0 };
+let rally = 0;
+let maxRally = 0;
+let running = false;
+let paused = false;
+let pauseTimer = 0;
+let keys = {};
+let touchY = null;
+let particles = [];
+let trail = [];
+
+function resetBall(dir) {
+  ball.x = W / 2;
+  ball.y = H / 2;
+  let angle = (Math.random() - 0.5) * 0.8;
+  let speed = 5;
+  ball.vx = Math.cos(angle) * speed * dir;
+  ball.vy = Math.sin(angle) * speed;
+  rally = 0;
+  paused = true;
+  pauseTimer = 60;
+}
+
+function resetGame() {
+  player.score = 0; ai.score = 0;
+  player.y = H / 2; ai.y = H / 2;
+  rally = 0; maxRally = 0;
+  particles = []; trail = [];
+  resetBall(1);
+}
+
+function spawnParticles(x, y, color, count) {
+  for (let i = 0; i < count; i++) {
+    let a = Math.random() * Math.PI * 2;
+    particles.push({
+      x, y, vx: Math.cos(a) * (1 + Math.random() * 3),
+      vy: Math.sin(a) * (1 + Math.random() * 3),
+      life: 1, color, size: 2 + Math.random() * 3
+    });
+  }
+}
+
+document.addEventListener('keydown', e => { keys[e.key] = true; });
+document.addEventListener('keyup', e => { keys[e.key] = false; });
+canvas.addEventListener('touchstart', e => { e.preventDefault(); touchY = e.touches[0].clientY; });
+canvas.addEventListener('touchmove', e => { e.preventDefault(); touchY = e.touches[0].clientY; });
+canvas.addEventListener('touchend', () => { touchY = null; });
+
+function update() {
+  if (paused) { pauseTimer--; if (pauseTimer <= 0) paused = false; return; }
+
+  // Player movement
+  let py = 0;
+  if (keys['ArrowUp'] || keys['w']) py = -6;
+  if (keys['ArrowDown'] || keys['s']) py = 6;
+  if (touchY !== null) {
+    let diff = touchY - player.y;
+    py = Math.sign(diff) * Math.min(Math.abs(diff), 8);
+  }
+  player.y += py;
+  player.y = Math.max(PADDLE_H / 2, Math.min(H - PADDLE_H / 2, player.y));
+
+  // AI movement
+  let aiTarget = ball.y + ball.vy * 10;
+  let aiDiff = aiTarget - ai.y;
+  let aiSpeed = 3.5 + rally * 0.05;
+  ai.y += Math.sign(aiDiff) * Math.min(Math.abs(aiDiff), aiSpeed);
+  ai.y = Math.max(PADDLE_H / 2, Math.min(H - PADDLE_H / 2, ai.y));
+
+  // Ball
+  trail.push({ x: ball.x, y: ball.y, life: 1 });
+  if (trail.length > 20) trail.shift();
+
+  ball.x += ball.vx;
+  ball.y += ball.vy;
+
+  // Top/bottom bounce
+  if (ball.y - BALL_R <= 0 || ball.y + BALL_R >= H) {
+    ball.vy *= -1;
+    ball.y = ball.y - BALL_R <= 0 ? BALL_R : H - BALL_R;
+    spawnParticles(ball.x, ball.y, '#7b2ff7', 5);
+  }
+
+  // Paddle collision - player
+  let px = 30 + PADDLE_W;
+  if (ball.x - BALL_R <= px && ball.x + BALL_R >= 30 &&
+      ball.y >= player.y - PADDLE_H / 2 && ball.y <= player.y + PADDLE_H / 2 && ball.vx < 0) {
+    let offset = (ball.y - player.y) / (PADDLE_H / 2);
+    let speed = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy) + 0.3;
+    speed = Math.min(speed, 12);
+    let angle = offset * 0.7;
+    ball.vx = Math.cos(angle) * speed;
+    ball.vy = Math.sin(angle) * speed;
+    ball.x = px + BALL_R;
+    rally++;
+    maxRally = Math.max(maxRally, rally);
+    spawnParticles(ball.x, ball.y, '#00f5d4', 10);
+  }
+
+  // Paddle collision - AI
+  let ax = W - 30 - PADDLE_W;
+  if (ball.x + BALL_R >= ax && ball.x - BALL_R <= W - 30 &&
+      ball.y >= ai.y - PADDLE_H / 2 && ball.y <= ai.y + PADDLE_H / 2 && ball.vx > 0) {
+    let offset = (ball.y - ai.y) / (PADDLE_H / 2);
+    let speed = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy) + 0.3;
+    speed = Math.min(speed, 12);
+    let angle = Math.PI - offset * 0.7;
+    ball.vx = Math.cos(angle) * speed;
+    ball.vy = Math.sin(angle) * speed;
+    ball.x = ax - BALL_R;
+    rally++;
+    spawnParticles(ball.x, ball.y, '#ff2770', 10);
+  }
+
+  // Score
+  if (ball.x < -BALL_R * 2) {
+    ai.score++;
+    spawnParticles(0, ball.y, '#ff2770', 20);
+    if (ai.score >= WIN_SCORE) { gameOver(); return; }
+    resetBall(1);
+  }
+  if (ball.x > W + BALL_R * 2) {
+    player.score++;
+    spawnParticles(W, ball.y, '#00f5d4', 20);
+    if (player.score >= WIN_SCORE) { gameOver(); return; }
+    resetBall(-1);
+  }
+
+  // Particles
+  for (let i = particles.length - 1; i >= 0; i--) {
+    let p = particles[i];
+    p.x += p.vx; p.y += p.vy; p.life -= 0.025;
+    if (p.life <= 0) particles.splice(i, 1);
+  }
+  for (let t of trail) t.life -= 0.06;
+}
+
+function draw() {
+  ctx.fillStyle = '#0a0a1a';
+  ctx.fillRect(0, 0, W, H);
+
+  // Center line
+  ctx.setLineDash([8, 12]);
+  ctx.strokeStyle = '#1a1a2e';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(W / 2, 0); ctx.lineTo(W / 2, H);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Scores
+  ctx.fillStyle = 'rgba(0,245,212,0.15)';
+  ctx.font = 'bold 120px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(player.score, W / 2 - 80, H / 2 + 40);
+  ctx.fillStyle = 'rgba(255,39,112,0.15)';
+  ctx.fillText(ai.score, W / 2 + 80, H / 2 + 40);
+
+  // Trail
+  for (let t of trail) {
+    if (t.life <= 0) continue;
+    ctx.globalAlpha = t.life * 0.3;
+    ctx.fillStyle = '#00f5d4';
+    ctx.beginPath();
+    ctx.arc(t.x, t.y, BALL_R * t.life, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  // Ball
+  ctx.shadowColor = '#00f5d4';
+  ctx.shadowBlur = 20;
+  ctx.fillStyle = '#fff';
+  ctx.beginPath();
+  ctx.arc(ball.x, ball.y, BALL_R, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+
+  // Player paddle
+  ctx.shadowColor = '#00f5d4';
+  ctx.shadowBlur = 15;
+  ctx.fillStyle = '#00f5d4';
+  ctx.beginPath();
+  ctx.roundRect(30, player.y - PADDLE_H / 2, PADDLE_W, PADDLE_H, 6);
+  ctx.fill();
+
+  // AI paddle
+  ctx.shadowColor = '#ff2770';
+  ctx.fillStyle = '#ff2770';
+  ctx.beginPath();
+  ctx.roundRect(W - 30 - PADDLE_W, ai.y - PADDLE_H / 2, PADDLE_W, PADDLE_H, 6);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+
+  // Particles
+  for (let p of particles) {
+    ctx.globalAlpha = p.life;
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  // Rally counter
+  if (rally > 2) {
+    ctx.fillStyle = '#7b2ff7';
+    ctx.font = 'bold 18px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('Rally: ' + rally, W / 2, 35);
+  }
+}
+
+function loop() {
+  if (running) update();
+  draw();
+  requestAnimationFrame(loop);
+}
+
+async function gameOver() {
+  running = false;
+  let won = player.score >= WIN_SCORE;
+  let rallyBonus = 1 + maxRally * 0.1;
+  let score = Math.floor(player.score * 100 * rallyBonus + (won ? 500 : 0));
+  document.getElementById('resultTitle').textContent = won ? 'You Win!' : 'Game Over';
+  document.getElementById('finalScore').textContent = score;
+  document.getElementById('gameOverMsg').textContent =
+    won ? `Victory! Best rally: ${maxRally}` : `AI wins. Best rally: ${maxRally}`;
+  document.getElementById('gameOverScreen').classList.remove('hidden');
+  try { await PlayFunClient.submitScore(score); } catch(e) {}
+}
+
+function startGame() {
+  document.getElementById('startScreen').classList.add('hidden');
+  document.getElementById('gameOverScreen').classList.add('hidden');
+  resetGame();
+  running = true;
+}
+
+document.getElementById('startBtn').addEventListener('click', startGame);
+document.getElementById('restartBtn').addEventListener('click', startGame);
+
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
